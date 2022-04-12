@@ -1,4 +1,4 @@
-*.db
-dump
+**/*.db
+**/dump
 .pytest*
 **/__pycache__/
