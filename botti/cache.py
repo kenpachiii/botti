@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from position import Position
+from botti.position import Position
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ class Cache:
     def __init__(self) -> None:
 
         try: 
-            self.con: sqlite3.Connection = sqlite3.connect('botti.db')
+            self.con: sqlite3.Connection = sqlite3.connect('./botti.db')
             self.con.row_factory = sqlite3.Row
             self.cur: sqlite3.Cursor = self.con.cursor()
 

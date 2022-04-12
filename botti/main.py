@@ -1,7 +1,7 @@
 import logging
 
-from loggers import setup_logging_pre
-from botti import Botti
+from botti.loggers import setup_logging_pre
+from botti.botti import Botti
 
 api_keys = {
     'main': {
@@ -26,11 +26,11 @@ api_keys = {
 
 logger = logging.getLogger('botti')
 
-def run():
+def main():
+
+    setup_logging_pre()
+
     botti = Botti(**api_keys['demo'])
     botti.run()
-        
-if __name__ == '__main__':
-    setup_logging_pre()
-    run()
+    
 

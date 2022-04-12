@@ -1,5 +1,7 @@
 import traceback
-from loggers import *
+import logging
+
+logger = logging.getLogger(__name__)
 
 def handle_exception(id: str, e: Exception):
     stack = traceback.extract_tb(e.__traceback__, -1).pop(-1)

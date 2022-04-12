@@ -6,10 +6,10 @@ import time
 import os
 import json
 
-from cache import Cache
-from position import Position
-from retrier import retrier
-from sms import send
+from botti.cache import Cache
+from botti.position import Position
+from botti.retrier import retrier
+from botti.sms import send
 
 logger = logging.getLogger(__name__)
 

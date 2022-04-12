@@ -38,9 +38,6 @@ def _set_loggers(verbosity: int = 0, api_verbosity: str = 'info') -> None:
     logging.getLogger('ccxtpro.base.exchange').setLevel(
         logging.INFO if verbosity <= 2 else logging.DEBUG
     )
-    logging.getLogger('sqlite3').setLevel(
-        logging.INFO if verbosity <= 2 else logging.DEBUG
-    )
 
 def get_existing_handlers(handlertype):
     """
