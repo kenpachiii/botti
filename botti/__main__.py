@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""
+__main__.py for Botti
+To launch Botti as a module
+> python -m botti (with Python >= 3.8)
+"""
+
+from botti import main
+
+if __name__ == '__main__':
+    main.main()
