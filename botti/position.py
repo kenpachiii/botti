@@ -1,6 +1,6 @@
 from typing import Any
 
-class Position(object):
+class Position:
 
     def __init__(self, object: dict = {}) -> None:
 
@@ -77,7 +77,3 @@ class Position(object):
 
     def pnl(self) -> float:
         return ((self.close_avg - self.open_avg) / self.open_avg) * 100
-
-
-
-

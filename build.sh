@@ -1,3 +1,3 @@
 #!/bin/bash
 
-docker build -t botti --build-arg GIT_TOKEN='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' --squash .
+docker build -t botti --build-arg GIT_TOKEN='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' --squash .

@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import time
 from botti.position import Position
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class Cache:
             self.cur.execute('''DELETE from position;''')
             self.con.commit()
         except Exception as e:
-            logger.error('clear - {error}'.format(error=e))
+            logger.error('delete - {error}'.format(error=e))
 
     def __del__(self) -> None:
         try:
@@ -61,6 +62,7 @@ class Cache:
         except Exception as e:
             logger.error('{error}'.format(error=e))
 
+    # TODO: Close all orders that were left open...?
     def close(self) -> None:
         try:
             self.con.commit()
@@ -96,7 +98,7 @@ class Cache:
         except Exception as e:
             logger.error('position - {error}'.format(error=e))
 
-cache = Cache()
+# cache = Cache()
 
 # position = Position({ 'id': '2f6f0bf63798', 'timestamp': 1649558505, 'symbol': 'BTC/USDT:USDT', 'side': 'buy', 'open_amount': 30.0, 'open_avg': 42735.7, 'close_amount': 0, 'close_avg': 0, 'status': 'pending', 'triggered': 0 })
 
@@ -108,7 +110,7 @@ cache = Cache()
 
 # print(vars(cache.position))
 
-cache.all()
+# cache.all()
 
 
 
