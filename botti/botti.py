@@ -395,7 +395,7 @@ class Botti:
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                # 'options': { 'defaultType': 'spot' }
+                'options': { 'watchOrderBook': { 'depth': 'books' }}
             })
 
             self.okx.set_sandbox_mode(self.test)
