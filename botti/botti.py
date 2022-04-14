@@ -279,6 +279,7 @@ class Botti:
                 if self.cache.position.symbol == order.get('symbol'):
                     self.update_position(order)
 
+    # FIXME: somehow prevent double entries
     async def watch_trades(self):
         try:
             while True:

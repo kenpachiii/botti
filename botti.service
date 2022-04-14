@@ -1,0 +1,13 @@
+[Unit]
+Description=Botti Daemon
+After=network.target
+
+[Service]
+# Set WorkingDirectory and ExecStart to your file paths accordingly
+# NOTE: %h will be resolved to /home/<username>
+WorkingDirectory=%h/botti
+ExecStart=/usr/bin/python3 -m botti
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

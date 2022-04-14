@@ -6,7 +6,6 @@ from email.mime.text import MIMEText
 logger = logging.getLogger(__name__)
 
 def exception(server: smtplib.SMTP, recipients: list, msg: str):
-    return
     msg = MIMEText('time: {time}\n\n{msg}'.format(time=datetime.datetime.utcnow().strftime('%H:%M:%S'), msg = msg))
     msg['From'] = 'botti.notification@gmail.com'
     msg['To'] = ', '.join(recipients)
