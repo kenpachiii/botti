@@ -387,9 +387,9 @@ class Botti:
             # required to repopulate an already opened position
             self.loop.run_until_complete(self.check_open_position())
             loops = [
-                    # self.watch_orders(),
-                    self.watch_order_book()
-                    # self.watch_trades()
+                    self.watch_orders(),
+                    self.watch_order_book(),
+                    self.watch_trades()
                 ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))
