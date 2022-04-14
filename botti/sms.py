@@ -13,7 +13,6 @@ def exception(server: smtplib.SMTP, recipients: list, msg: str):
     server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
     
 def profits(server: smtplib.SMTP, recipients: list, msg: str):
-    return
     msg = MIMEText(msg)
     msg['From'] = 'botti.notification@gmail.com'
     msg['To'] = ', '.join(recipients)
@@ -33,7 +32,7 @@ def send_sms(type: str, msg: str) -> None:
                 exception(server, ['9286323030@vtext.com'], msg)
 
             if type == 'profits':
-                profits(server, ['3868372377@txt.att.net', '9286323030@vtext.com'], msg)
+                profits(server, ['9286323030@vtext.com'], msg) # '3868372377@txt.att.net'
 
             server.close()
 
