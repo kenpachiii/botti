@@ -1,13 +1,12 @@
+from math import ceil
 import ccxtpro
 import logging
 import numpy as np
 import asyncio
-import time
 import json
-import datetime
-
 import os
 
+from botti.exchange import Exchange
 from botti.cache import Cache
 from botti.position import Position
 from botti.retrier import retrier
@@ -36,7 +35,7 @@ class Botti:
         self.cache: Cache = Cache()
         self.order_book: dict = {}
 
-        self.okx: ccxtpro.okx = ccxtpro.okx
+        self.okx: Exchange = ccxtpro.okx
 
         self._lock = asyncio.Lock
 
@@ -58,6 +57,8 @@ class Botti:
             logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
             send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
             return
+
+        exception = str(exception).replace(f'{self.okx.id} ', '', 1)
 
         logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=str(exception)))
         send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=str(exception)))
@@ -90,14 +91,16 @@ class Botti:
                    
         return price
 
-    async def break_even(self) -> None:
+    def break_even(self) -> tuple:
 
         position: Position = self.cache.position
 
         if not self.order_book or 'open' not in position.status:
-            return 
+            return (0, False) 
 
         break_even_price = position.open_avg * (1 + self.fee)**2
+
+        # print(ceil(self.p_t), ceil(break_even_price), position.triggered)
 
         if self.p_t > break_even_price and position.triggered == 0:
             position.update({ 'triggered': 1 })
@@ -108,7 +111,7 @@ class Botti:
             self.cache.update(position)
 
         if position.triggered == 0:
-            return
+            return (0, False)
 
         bid = self.market_depth('bids', break_even_price, self.cache.position.open_amount)
        
@@ -117,11 +120,13 @@ class Botti:
             logger.info('{exchange_id} break even adjusted - {_id} {_symbol} {break_even} -> {adj_price}'.format(**vars(position), exchange_id=self.okx.id, break_even=break_even_price, adj_price=bid))
             break_even_price = bid
 
-        if self.p_t < break_even_price:
+        if ceil(self.p_t) == ceil(break_even_price):
             logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} < {break_even}'.format(exchange_id=self.okx.id, **vars(position), p_t=self.p_t, break_even=break_even_price))
-            await self.create_order('fok', 'sell', position.open_amount, break_even_price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+            return (break_even_price, True)
 
-    async def trailing_entry(self) -> bool:
+        return (0, False)
+
+    def trailing_entry(self) -> bool:
 
         price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
 
@@ -144,11 +149,10 @@ class Botti:
 
         return False
 
-    async def take_profits(self):
+    def take_profits(self):
         return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.05
 
-    async def add_position(self, order) -> None:
-
+    def add_position(self, order: dict) -> None:
         try:
             self.cache.insert(Position({ 
                 'id': os.urandom(6).hex(), 
@@ -166,7 +170,7 @@ class Botti:
         except Exception as e:
             self.log_exception('add position', e)
         
-    async def update_position(self, order: dict) -> None:
+    def update_position(self, order: dict) -> None:
 
         try: 
 
@@ -214,8 +218,7 @@ class Botti:
         finally:
             return float(response.get('data')[0].get('maxBuy')) * (1 - self.fee)**2
 
-    async def create_order(self, type: str, side: str, size: float, price: float = None, params={}) -> None:
-        return
+    async def create_order(self, type: str, side: str, size: float, price: float = None, params: dict={}) -> None:
         try:
             await self.okx.create_order(self.symbol, type, side, size, price, params)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -260,35 +263,36 @@ class Botti:
 
                 # adding position
                 if self.cache.position.symbol == None:
-                    await self.add_position(order)
+                    self.add_position(order)
                     continue
 
                 # updating position
                 if self.cache.position.symbol == order.get('symbol'):
-                    await self.update_position(order)
+                    self.update_position(order)
 
     async def watch_trades(self):
         try:
             while True:
-                trades = await self.okx.watch_trades(self.symbol)
+                trades: list[dict] = await self.okx.watch_trades(self.symbol)
 
                 for trade in trades:
 
                     self.p_t = trade.get('price')
 
                     # break even
-                    await self.break_even()
+                    price, ok = self.break_even()
+                    if ok:
+                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
 
                     # trailing entry
-                    if await self.trailing_entry():
+                    if self.trailing_entry():
                         size = await self.position_size() 
                         price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
                         await self.create_order('fok', 'buy', size, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
                         
                     # take profits
-                    if await self.take_profits():
+                    if self.take_profits():
                         await self.create_order('market', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
-
                         logger.info('{id} take profits - target hit'.format(id=self.okx.id))
                         send_sms('profits', 'target hit {}'.format(self.cache.last.pnl()))
                
@@ -315,7 +319,7 @@ class Botti:
     async def watch_orders(self):
         try:
             while True:
-                orders = await self.okx.watch_orders(self.symbol, limit = 1)
+                orders: list[dict] = await self.okx.watch_orders(self.symbol, limit = 1)
 
                 with open('dump', 'w') as json_file:
                     json.dump(self.okx.orders, json_file, 
@@ -337,12 +341,12 @@ class Botti:
 
                     # adding position
                     if self.cache.position.symbol == None:
-                        await self.add_position(order)
+                        self.add_position(order)
                         continue
 
                     # updating position
                     if self.cache.position.symbol == order.get('symbol'):
-                        await self.update_position(order)
+                        self.update_position(order)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('watch orders', e)
@@ -353,7 +357,7 @@ class Botti:
 
     async def system_status(self):
         try: 
-            response = await self.okx.public_get_system_status()
+            response: dict = await self.okx.public_get_system_status()
             for status in response.get('data'):
                 print(self.okx.iso8601(int(status.get('begin'))), self.okx.iso8601(int(status.get('end'))), status.get('serviceType'), status.get('state'), status.get('system'), status.get('title'))
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -363,26 +367,28 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e) 
 
-    @retrier
+    # FIXME: ccxt docs claim to handle all retry attempts
+    # @retrier
     def run(self):
 
         logger.info('starting botti')
 
         try: 
 
-            self.okx = ccxtpro.okx({
+            self.okx = Exchange({
                 'asyncio_loop': self.loop,
                 'newUpdates': True,
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': { 'defaultType': 'swap', 'watchOrderBook': { 'depth': 'books' } }
+                'options': { 'defaultType': 'swap' }
             })
 
             self.okx.set_sandbox_mode(self.test)
             self.loop.run_until_complete(self.okx.load_markets(reload=False))
 
-            # # await self.okx.set_leverage(self.leverage, self.symbol, params = { 'mgnMode': 'cross' })
+            # make sure leverage is updated
+            self.loop.run_until_complete(self.okx.set_leverage(self.leverage, self.symbol, params = { 'mgnMode': 'cross' }))
 
             # required to repopulate an already opened position
             self.loop.run_until_complete(self.check_open_position())
@@ -395,7 +401,6 @@ class Botti:
             self.loop.run_until_complete(asyncio.gather(*loops))
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-    
             self.log_exception('run', e)
 
             # raise NetworkError to be recieved by retrier

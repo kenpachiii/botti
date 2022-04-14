@@ -17,9 +17,9 @@ api_keys = {
         'test': False
     },
     'demo': {
-        'key': 'cd145a52-e4be-4c66-abbf-bd9679e8f7c1',
-        'secret': '5D1C5D3AB5FEB24873A66F798D8F7866',
-        'password': 'LJe4HweCQ52SDTII',
+        'key': '696b9c27-0ac6-49fb-ab56-fc8151e70881',
+        'secret': '981FB05DD7C5A5C0889D74E547FE6546',
+        'password': 'v5pksFMxT7G2uwFy',
         'test': True
     }
 }
@@ -30,5 +30,5 @@ def main():
 
     setup_logging_pre()
 
-    botti = Botti(**api_keys['demo'])
+    botti = Botti(**api_keys['botti-api'])
     botti.run()

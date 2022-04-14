@@ -266,17 +266,24 @@ orders = np.asarray([[4.33255e+04, 3.64000e+02],
 
 def safe_index(arr, i, default = None):
 
-    if i == -1 and len(arr) > 0:
-        return arr[-1]
+    if type(i).__name__ == 'int':
+        i = [i]
 
-    n = 0
+    for ii in i:
 
-    while (n < len(arr)):
-        if n == i:
-            return arr[n] 
-        n += 1
+        if ii == -1 and len(arr) > 0:
+            arr = arr[-1]
+            continue
 
-    return default
+        n = 0
+
+        while (n < len(arr)):
+            if n == ii:
+                arr = arr[n] 
+                break
+            n += 1
+
+    return arr 
 
 def market_depth(orders, side, price, size) -> float:
 
@@ -312,4 +319,4 @@ order_book = { 'bids': [], 'asks': [] }
 
 # market_depth(order_book, 'bids', 4.30833e+04, 30)
 
-print(safe_index([], -1, []))
+print(safe_index(orders, [0], 0))
