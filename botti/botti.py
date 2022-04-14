@@ -138,21 +138,21 @@ class Botti:
 
         price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
 
-        if 'closed' in self.cache.position.status:
-            logger.info('{id} trailing entry - no positions found'.format(id=self.okx.id))
-            return True
-        return False
+        # if 'closed' in self.cache.position.status:
+        #     logger.info('{id} trailing entry - no positions found'.format(id=self.okx.id))
+        #     return True
+        # return False
 
         if 'closed' not in self.cache.position.status:
             return False
 
         # upper limit
         if self.p_t > (price * 1.01):
-            # logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(id=self.okx.id, limit=price * 1.01))
+            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(id=self.okx.id, limit=price * 1.01))
             return True
 
         if self.p_t < (price * 0.98):
-            # logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(id=self.okx.id), limit=price * 0.98)
+            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(id=self.okx.id), limit=price * 0.98)
             return True
 
         return False
