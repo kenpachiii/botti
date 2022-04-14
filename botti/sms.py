@@ -1,65 +1,43 @@
 import datetime
-
-import boto3
-from botocore.exceptions import ClientError
-
 import logging
+import smtplib
+from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-# https://aws.amazon.com/premiumsupport/knowledge-center/ec2-port-25-throttle/
+def exception(server: smtplib.SMTP, recipients: list, msg: str):
+    msg = MIMEText('time: {time}\n\n{msg}'.format(time=datetime.datetime.utcnow().strftime('%H:%M:%S'), msg = msg))
+    msg['From'] = 'botti.notification@gmail.com'
+    msg['To'] = ', '.join(recipients)
 
-def exception(client, recipients: list, body: str):
-
-    return
-
-    body = '{time} - {body}'.format(time=datetime.datetime.utcnow(), body = body)
-
-    return client.send_email(
-        Destination={
-            'ToAddresses': recipients,
-        },
-        Message={
-            'Body': {
-                'Text': {
-                    'Charset': 'UTF-8',
-                    'Data': body,
-                },
-            },
-        },
-        Source='Sender Name <hiddenleafresearch@gmail.com>',
-    )
+    server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
     
-def profits(client, recipients: list, body: str):
+def profits(server: smtplib.SMTP, recipients: list, msg: str):
     return
-    return client.send_email(
-        Destination={
-            'ToAddresses': recipients,
-        },
-        Message={
-            'Body': {
-                'Text': {
-                    'Charset': 'UTF-8',
-                    'Data': body,
-                },
-            },
-        },
-        Source='Sender Name <hiddenleafresearch@gmail.com>',
-    )
+    msg = MIMEText(msg)
+    msg['From'] = 'botti.notification@gmail.com'
+    msg['To'] = ', '.join(recipients)
+
+    server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
 
 def send_sms(type: str, msg: str) -> None:
-
-    client = boto3.client('ses', region_name='us-east-1')
-
     try:
-        if type == 'exception':
-            exception(client, ['9286323030@vtext.com'], msg)
 
-        if type == 'profits':
-            profits(client, ['3868372377@txt.att.net', '9286323030@vtext.com'], msg)
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
 
-    except ClientError as e:
+            server.ehlo()
+            server.starttls()
+            server.login('botti.notification@gmail.com', 'yygakfowwmpogiuy')
+            
+            if type == 'exception':
+                exception(server, ['9286323030@vtext.com'], msg)
+
+            if type == 'profits':
+                profits(server, ['3868372377@txt.att.net', '9286323030@vtext.com'], msg)
+
+            server.close()
+
+    except Exception as e:
         logger.error('error sending sms {}'.format(str(e)))
 
     
-

@@ -12,7 +12,6 @@ setup(
         # from requirements.txt
         'ccxtpro',
         'numpy',
-        'asyncio',
-        'botto3'
+        'asyncio'
     ],
 )

@@ -3,9 +3,10 @@ import logging
 import numpy as np
 import asyncio
 import time
-import os
 import json
 import datetime
+
+import os
 
 from botti.cache import Cache
 from botti.position import Position
@@ -22,10 +23,10 @@ class Botti:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.key: str = kwargs['key']
-        self.secret: str = kwargs['secret']
-        self.password: str = kwargs['password']
-        self.test: str = kwargs['test']
+        self.key: str = kwargs.get('key')
+        self.secret: str = kwargs.get('secret')
+        self.password: str = kwargs.get('password')
+        self.test: bool = kwargs.get('test')
 
         self.symbol: str = 'BTC/USDT:USDT'
         self.fee: float = 0.0005
@@ -54,14 +55,12 @@ class Botti:
 
         if isinstance(exception, (ccxtpro.NetworkError, ccxtpro.ExchangeError)):
             exception = json.loads(str(exception).replace(f'{self.okx.id} ', '', 1))
-            msg = '{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message'))
-            logger.error(msg)
-            send_sms('exception', msg)
+            logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
+            send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
             return
 
-        msg = '{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=str(exception))
-        logger.error(msg)
-        send_sms('exception', msg)
+        logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=str(exception)))
+        send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=str(exception)))
 
     def market_depth(self, side, price, size) -> float:
 
@@ -216,7 +215,7 @@ class Botti:
             return float(response.get('data')[0].get('maxBuy')) * (1 - self.fee)**2
 
     async def create_order(self, type: str, side: str, size: float, price: float = None, params={}) -> None:
-        
+        return
         try:
             await self.okx.create_order(self.symbol, type, side, size, price, params)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -254,8 +253,9 @@ class Botti:
             
             for order in orders:
 
+                # TODO: does this need to be handled too...?
                 if order.get('status') in ['canceled', 'expired', 'rejected']:
-                    logger.info('{exchange_id} recent order {status}'.format(exchange_id = self.okx.id, status=order.get('status')))
+                    logger.info('{exchange_id} recent order {status}'.format(exchange_id = self.okx.id, status = order.get('status')))
                     continue 
 
                 # adding position
@@ -351,6 +351,18 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e) 
 
+    async def system_status(self):
+        try: 
+            response = await self.okx.public_get_system_status()
+            for status in response.get('data'):
+                print(self.okx.iso8601(int(status.get('begin'))), self.okx.iso8601(int(status.get('end'))), status.get('serviceType'), status.get('state'), status.get('system'), status.get('title'))
+        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            self.log_exception('system status', e)
+
+            # make sure run recieves the error to retry
+            if type(e).__name__ == 'NetworkError':
+                raise ccxtpro.NetworkError(e) 
+
     @retrier
     def run(self):
 
@@ -364,20 +376,20 @@ class Botti:
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': { 'defaultType': 'swap' }
+                'options': { 'defaultType': 'swap', 'watchOrderBook': { 'depth': 'books' } }
             })
 
             self.okx.set_sandbox_mode(self.test)
             self.loop.run_until_complete(self.okx.load_markets(reload=False))
 
-            # await self.okx.set_leverage(self.leverage, self.symbol, params = { 'mgnMode': 'cross' })
+            # # await self.okx.set_leverage(self.leverage, self.symbol, params = { 'mgnMode': 'cross' })
 
             # required to repopulate an already opened position
             self.loop.run_until_complete(self.check_open_position())
             loops = [
-                    self.watch_orders(),
-                    self.watch_order_book(),
-                    self.watch_trades()
+                    # self.watch_orders(),
+                    self.watch_order_book()
+                    # self.watch_trades()
                 ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))

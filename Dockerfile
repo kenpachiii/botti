@@ -6,9 +6,6 @@ ENV LC_ALL C.UTF-8
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONFAULTHANDLER 1
 ENV PATH=/home/botti/.local/bin:$PATH
-ENV SES_SMTP_ENDPOINT=email-smtp.us-east-1.amazonaws.com
-ENV SES_SMTP_USERNAME=AKIAURKPTFEA5VZV4WWN
-ENV SES_SMTP_PASSWORD=BL6GWUudkwUAaJaUAgqjPgX5P4h6reF8WTWXcChjo8oX
 
 # Build args
 ARG GIT_TOKEN
@@ -44,35 +41,16 @@ ENV LD_LIBRARY_PATH /usr/local/lib
 
 COPY --from=python-deps --chown=botti:botti /home/botti/.local /home/botti/.local
 
-RUN apt-get update \
-  && apt-get -y install exim4 \
-  && apt-get clean   
+USER botti
 
-COPY exim4.conf /etc/exim4/exim.conf.local
-ADD exim.key /etc/exim4/exim.key
-ADD exim.crt /etc/exim4/exim.crt
+# Install and execute
+COPY --chown=botti:botti . /botti/
 
-RUN /etc/init.d/exim4 restart
+RUN pip install -e . --user --no-cache-dir --no-build-isolation \
+  && mkdir /botti/db/ 
 
-# ADD input.txt .
+ENTRYPOINT ["botti"]
 
-# USER botti
-
-# # Install and execute
-# COPY --chown=botti:botti . /botti/
-
-# RUN pip install -e . --user --no-cache-dir --no-build-isolation \
-#   && mkdir /botti/db/ 
-
-# ENTRYPOINT ["botti"]
-
-# CMD [ "python -m botti" ]
-
-
-# From: hiddenleafresearch@gmail.com
-# Subject: Test message
-# This is a test.
-
-# .
+CMD [ "python -m botti" ]
 
 

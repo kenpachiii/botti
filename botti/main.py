@@ -10,7 +10,7 @@ api_keys = {
         'password': 'ZGN7WIPReYUzwdsb',
         'test': False
     },
-    'bottie-api': {
+    'botti-api': {
         'key': '34dc5ac4-b78b-4dfa-b0ca-3a69e7cedd07',
         'secret': 'DECA9E6C4CDA7D8C8C97AF5A148FAEEC',
         'password': 'KQMlR1m+g85tJMD2',
@@ -32,5 +32,3 @@ def main():
 
     botti = Botti(**api_keys['demo'])
     botti.run()
-    
-
