@@ -27,7 +27,7 @@ class Botti:
         self.password: str = kwargs.get('password')
         self.test: bool = kwargs.get('test')
 
-        self.symbol: str = 'BTC/USDT:USDT'
+        self.symbol: str = 'BTC/USDT'
         self.fee: float = 0.0005
         self.leverage: int = 2
 
@@ -50,14 +50,22 @@ class Botti:
         self.loop.run_until_complete(self.okx.close())
         self.loop.close()
 
+    # FIXME: ccxt exceptions seem to have inconsistent format
     def log_exception(self, origin, exception) -> None:
 
         if isinstance(exception, (ccxtpro.NetworkError, ccxtpro.ExchangeError)):
             exception = json.loads(str(exception).replace(f'{self.okx.id} ', '', 1))
-            logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
-            send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
-            return
 
+            if exception.get('error_code') and exception.get('error_message'):
+                logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
+                send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
+                return
+
+            if exception.get('code') and exception.get('data'):
+                logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('data')[0].get('sCode'), msg=exception.get('data')[0].get('sMsg')))
+                send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('data')[0].get('sCode'), msg=exception.get('data')[0].get('sMsg')))
+                return
+            
         exception = str(exception).replace(f'{self.okx.id} ', '', 1)
 
         logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=str(exception)))
@@ -246,8 +254,9 @@ class Botti:
 
         response: dict = {}
         try:
+            # FIXME: params need to be 'smarter'
             # getting orders this way may not get cached by ccxtpro
-            response = await self.okx.private_get_trade_orders_history({ 'instId': self.okx.market_id(self.symbol), 'instType': 'SWAP', 'limit': 100 })
+            response = await self.okx.private_get_trade_orders_history({ 'instId': self.okx.market_id(self.symbol), 'instType': 'MARGIN', 'limit': 100 })
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('orders history', e)
 
@@ -282,17 +291,18 @@ class Botti:
                     # break even
                     price, ok = self.break_even()
                     if ok:
-                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
 
                     # trailing entry
                     if self.trailing_entry():
-                        size = await self.position_size() 
+                        # sz = self.okx.market(self.symbol).get('contractSize')
+                        # size = await self.position_size() 
                         price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
-                        await self.create_order('fok', 'buy', size, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('fok', 'buy', 0.00001, price, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
                         
                     # take profits
                     if self.take_profits():
-                        await self.create_order('market', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('market', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
                         logger.info('{id} take profits - target hit'.format(id=self.okx.id))
                         send_sms('profits', 'target hit {}'.format(self.cache.last.pnl()))
                
@@ -319,7 +329,10 @@ class Botti:
     async def watch_orders(self):
         try:
             while True:
-                orders: list[dict] = await self.okx.watch_orders(self.symbol, limit = 1)
+
+                # FIXME: ommiting symbol is the only way to get type ANY otherwise ccxt uses the market object
+                # which seems to produce unfavorable results
+                orders: list[dict] = await self.okx.watch_orders(limit = 1, params = { 'type': 'ANY' })
 
                 with open('dump', 'w') as json_file:
                     json.dump(self.okx.orders, json_file, 
@@ -381,7 +394,7 @@ class Botti:
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': { 'defaultType': 'swap' }
+                # 'options': { 'defaultType': 'spot' }
             })
 
             self.okx.set_sandbox_mode(self.test)
