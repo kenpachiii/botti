@@ -75,5 +75,5 @@ class Position:
         x2: float = order.get('average') * order.get('filled')
         return (x1 + x2) / (self.get(amount) + order.get('filled'))
 
-    def pnl(self) -> float:
-        return ((self.close_avg - self.open_avg) / self.open_avg) * 100
+    def pnl(self, leverage) -> float:
+        return (((self.close_avg - self.open_avg) / self.open_avg) * 100) * leverage

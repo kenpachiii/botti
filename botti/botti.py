@@ -1,4 +1,5 @@
 from math import ceil
+from xml.dom.minidom import parseString
 import ccxtpro
 import logging
 import numpy as np
@@ -54,7 +55,10 @@ class Botti:
     def log_exception(self, origin, exception) -> None:
 
         if isinstance(exception, (ccxtpro.NetworkError, ccxtpro.ExchangeError)):
-            exception = json.loads(str(exception).replace(f'{self.okx.id} ', '', 1))
+            try:
+                exception = json.loads(str(exception).replace(f'{self.okx.id} ', '', 1))
+            except ValueError:
+                pass
 
             if exception.get('error_code') and exception.get('error_message'):
                 logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
@@ -209,7 +213,7 @@ class Botti:
                 if position.open_amount == 0:
                     position.update({ 'status': 'closed' })
 
-            logger.info('{exchange_id} update position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status} {pnl}'.format(exchange_id = self.okx.id, pnl = position.pnl() if position.open_amount == 0 else '', **vars(position)))
+            logger.info('{exchange_id} update position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status} {pnl}'.format(exchange_id = self.okx.id, pnl = position.pnl(self.leverage) if position.open_amount == 0 else '', **vars(position)))
             self.cache.update(position)
 
         except Exception as e:
@@ -305,7 +309,7 @@ class Botti:
                     if self.take_profits():
                         await self.create_order('market', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
                         logger.info('{id} take profits - target hit'.format(id=self.okx.id))
-                        send_sms('profits', 'target hit {}'.format(self.cache.last.pnl()))
+                        send_sms('profits', 'target hit {}'.format(self.cache.last.pnl(self.leverage)))
                
                 self.okx.trades[self.symbol].clear()
 
