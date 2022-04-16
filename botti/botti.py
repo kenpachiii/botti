@@ -141,11 +141,11 @@ class Botti:
     # FIXME: update to a moving window...?
     def trailing_entry(self) -> bool:
 
-        if not self.cache.last.id:
-            return True
-
         if 'closed' not in self.cache.position.status:
             return False
+
+        if not self.cache.last.id:
+            return True
 
         # upper limit
         if self.p_t > (self.cache.last.close_avg * 1.01):
