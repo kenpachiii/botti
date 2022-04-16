@@ -51,30 +51,9 @@ class Botti:
         self.loop.run_until_complete(self.okx.close())
         self.loop.close()
 
-    # FIXME: ccxt exceptions seem to have inconsistent format
-    # also its just 'dirty'
     def log_exception(self, origin, exception) -> None:
-
-        if isinstance(exception, (ccxtpro.NetworkError, ccxtpro.ExchangeError)):
-            try:
-                exception = json.loads(str(exception).replace(f'{self.okx.id} ', '', 1))
-            except ValueError:
-                pass
-
-            if exception.get('error_code') and exception.get('error_message'):
-                logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
-                send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('error_code'), msg=exception.get('error_message')))
-                return
-
-            if exception.get('code') and exception.get('data'):
-                logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('data')[0].get('sCode'), msg=exception.get('data')[0].get('sMsg')))
-                send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('data')[0].get('sCode'), msg=exception.get('data')[0].get('sMsg')))
-                return
-
-        exception = str(exception).replace(f'{self.okx.id} ', '', 1)
-
-        logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=str(exception)))
-        send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=str(exception)))
+        logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=type(exception).__name__))
+        send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=type(exception).__name__))
 
     def market_depth(self, side, price, size) -> float:
 
