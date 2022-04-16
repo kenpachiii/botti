@@ -38,7 +38,7 @@ class Botti:
 
         self.okx: Exchange = ccxtpro.okx
 
-        self._lock = asyncio.Lock
+        self.event = asyncio.Event()
 
     def __del__(self):
         """
@@ -233,6 +233,9 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('create order', e)
 
+        # reset event so consume waits on order
+        self.event.clear()
+
     async def check_open_position(self):
 
         logger.info('{id} checking for open positions'.format(id=self.okx.id))
@@ -290,24 +293,6 @@ class Botti:
 
                     self.p_t = trade.get('price')
 
-                    # break even
-                    price, ok = self.break_even()
-                    if ok:
-                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
-
-                    # trailing entry
-                    if self.trailing_entry():
-                        # sz = self.okx.market(self.symbol).get('contractSize')
-                        # size = await self.position_size() 
-                        price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
-                        await self.create_order('fok', 'buy', 0.00001, price, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
-                        
-                    # take profits
-                    if self.take_profits():
-                        await self.create_order('market', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
-                        logger.info('{id} take profits - target hit'.format(id=self.okx.id))
-                        send_sms('profits', 'target hit {}'.format(self.cache.last.pnl(self.leverage)))
-               
                 self.okx.trades[self.symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -363,8 +348,44 @@ class Botti:
                     if self.cache.position.symbol == order.get('symbol'):
                         self.update_position(order)
 
+                # once orders are processed re-start consuming
+                self.event.set()
+
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('watch orders', e)
+
+            # make sure run recieves the error to retry
+            if type(e).__name__ == 'NetworkError':
+                raise ccxtpro.NetworkError(e) 
+
+    async def consume(self):
+
+        try: 
+            while True:
+
+                # break even
+                price, ok = self.break_even()
+                if ok:
+                    await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
+
+                # trailing entry
+                if self.trailing_entry():
+                    # sz = self.okx.market(self.symbol).get('contractSize')
+                    # size = await self.position_size() 
+                    price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
+                    await self.create_order('fok', 'buy', 0.00001, price, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
+                    
+                # take profits
+                if self.take_profits():
+                    await self.create_order('market', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'ccy': 'USDT' })
+                    logger.info('{id} take profits - target hit'.format(id=self.okx.id))
+                    send_sms('profits', 'target hit {}'.format(self.cache.last.pnl(self.leverage)))
+
+                # if an open or close order is created wait until watch orders receives it.
+                await self.event.wait()
+
+        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            self.log_exception('consume', e)
 
             # make sure run recieves the error to retry
             if type(e).__name__ == 'NetworkError':
@@ -410,7 +431,8 @@ class Botti:
             loops = [
                     self.watch_orders(),
                     self.watch_order_book(),
-                    self.watch_trades()
+                    self.watch_trades(),
+                    self.consume()
                 ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))
