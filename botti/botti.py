@@ -54,9 +54,11 @@ class Botti:
     # FIXME: ccxt exceptions seem to have inconsistent format
     def log_exception(self, origin, exception) -> None:
 
+        exception = str(exception).replace(f'{self.okx.id} ', '', 1)
+
         if isinstance(exception, (ccxtpro.NetworkError, ccxtpro.ExchangeError)):
             try:
-                exception = json.loads(str(exception).replace(f'{self.okx.id} ', '', 1))
+                exception = json.loads(exception)
             except ValueError:
                 pass
 
@@ -69,8 +71,6 @@ class Botti:
                 logger.error('{id} {origin} - {code} {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('data')[0].get('sCode'), msg=exception.get('data')[0].get('sMsg')))
                 send_sms('exception', 'origin: {id} {origin}\n\ncode: {code}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, code=exception.get('data')[0].get('sCode'), msg=exception.get('data')[0].get('sMsg')))
                 return
-            
-        exception = str(exception).replace(f'{self.okx.id} ', '', 1)
 
         logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=str(exception)))
         send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=str(exception)))
@@ -138,25 +138,22 @@ class Botti:
 
         return (0, False)
 
+    # FIXME: update to a moving window...?
     def trailing_entry(self) -> bool:
 
-        price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
-
-        # if 'closed' in self.cache.position.status:
-        #     logger.info('{id} trailing entry - no positions found'.format(id=self.okx.id))
-        #     return True
-        # return False
+        if not self.cache.last.id:
+            return True
 
         if 'closed' not in self.cache.position.status:
             return False
 
         # upper limit
-        if self.p_t > (price * 1.01):
-            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(id=self.okx.id, limit=price * 1.01))
+        if self.p_t > (self.cache.last.close_avg * 1.01):
+            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
             return True
 
-        if self.p_t < (price * 0.98):
-            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(id=self.okx.id), limit=price * 0.98)
+        if self.p_t < (self.cache.last.close_avg * 0.98):
+            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(id=self.okx.id), limit=self.cache.last.close_avg * 0.98)
             return True
 
         return False
