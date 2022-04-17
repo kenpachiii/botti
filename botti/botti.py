@@ -152,7 +152,7 @@ class Botti:
     def take_profits(self):
         return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.05
 
-    def handle_orders(self, orders: list[dict], clear=False):
+    def handle_orders(self, orders: list, clear=False):
 
         for order in orders:
             if order.get('status') in ['canceled', 'expired', 'rejected']:
