@@ -99,8 +99,7 @@ class Botti:
 
         break_even_price = position.open_avg * (1 + self.fee)**2
 
-        # returns break_even_price or adjusted break_even_price
-        # FIXME: this could bring break even up into p_t and trigger which we don't want
+        # returns break_even_price or an adjusted break_even_price
         bid = self.market_depth('bids', break_even_price,
                                 self.cache.position.open_amount)
 
@@ -119,6 +118,9 @@ class Botti:
             logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} == {break_even}'.format(
                 exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
             return (break_even_price, True)
+
+        logger.info('{exchange_id} not breaking even {_id} {_symbol} {p_t} != {break_even}'.format(
+            exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))  
 
         return (0, False)
 
