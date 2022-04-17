@@ -129,9 +129,6 @@ class Botti:
                 exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
             return (break_even_price, True)
 
-        logger.info('{exchange_id} not breaking even {_id} {_symbol} {p_t} != {break_even}'.format(
-            exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))  
-
         return (0, False)
 
     def trailing_entry(self) -> bool:
@@ -309,11 +306,11 @@ class Botti:
                     if ok:
                         await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
 
+                    # FIXME: give more consideration
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        price = self.market_depth('asks', self.p_t, size)
-                        await self.create_order('fok', 'buy', size, price, params={'tdMode': 'cross', 'posSide': 'long'})
+                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
