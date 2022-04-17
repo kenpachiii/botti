@@ -103,11 +103,11 @@ class Botti:
         bid = self.market_depth('bids', break_even_price,
                                 self.cache.position.open_amount)
 
-        if self.p_t > bid and position.triggered == 0:
+        if ceil(self.p_t) > ceil(bid) and position.triggered == 0:
             position.update({'triggered': 1})
             self.cache.update(position)
 
-        if self.p_t < bid and position.triggered == 1:
+        if ceil(self.p_t) < ceil(bid) and position.triggered == 1:
             position.update({'triggered': 0})
             self.cache.update(position)
 
