@@ -285,12 +285,12 @@ class Botti:
                     # break even
                     price, ok = self.break_even()
                     if ok:
-                        await self.create_order('market', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
 
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size() 
-                        await self.create_order('fok', 'buy', size, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('limit', 'buy', size, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
                         
                     # take profits
                     if self.take_profits():
@@ -334,8 +334,6 @@ class Botti:
                                 separators=(',',': '))
                 
                 for order in orders:
-
-                    # print(order['side'], order['status'], order['average'], order['filled'])
 
                     if order.get('status') in ['canceled', 'expired', 'rejected']:
 
