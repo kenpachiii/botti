@@ -1,4 +1,3 @@
-import datetime
 import logging
 import smtplib
 from email.mime.text import MIMEText
@@ -6,7 +5,7 @@ from email.mime.text import MIMEText
 logger = logging.getLogger(__name__)
 
 def exception(server: smtplib.SMTP, recipients: list, msg: str):
-    msg = MIMEText('time: {time}\n\n{msg}'.format(time=datetime.datetime.utcnow().strftime('%H:%M:%S'), msg = msg))
+    msg = MIMEText(msg)
     msg['From'] = 'botti.notification@gmail.com'
     msg['To'] = ', '.join(recipients)
 
@@ -28,11 +27,18 @@ def send_sms(type: str, msg: str) -> None:
             server.starttls()
             server.login('botti.notification@gmail.com', 'yygakfowwmpogiuy')
             
+            recipients = None
             if type == 'exception':
-                exception(server, ['9286323030@vtext.com'], msg)
+                recipients = ['9286323030@vtext.com']
 
             if type == 'profits':
-                profits(server, ['9286323030@vtext.com'], msg) # '3868372377@txt.att.net'
+                recipients = ['9286323030@vtext.com'] # '3868372377@txt.att.net'
+
+            msg = MIMEText(msg)
+            msg['From'] = 'botti.notification@gmail.com'
+            msg['To'] = ', '.join(recipients)
+
+            server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
 
             server.close()
 
