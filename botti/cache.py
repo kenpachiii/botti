@@ -7,8 +7,6 @@ logger = logging.getLogger(__name__)
 
 class Cache:
 
-    # FIXME: how to make this 'safer' has no unique contraints 
-    # FIXME: position is actually an order so should be refactored
     def __init__(self) -> None:
 
         try: 

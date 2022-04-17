@@ -186,7 +186,7 @@ class Botti:
             logger.info('{exchange_id} add position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status}'.format(
                 exchange_id=self.okx.id, **vars(self.cache.position)))
         except Exception as e:
-            self.log_exception('add position', e)
+            self.log_exception(e)
 
     def update_position(self, order: dict) -> None:
 
@@ -227,7 +227,7 @@ class Botti:
             self.cache.update(position)
 
         except Exception as e:
-            self.log_exception('update position', e)
+            self.log_exception(e)
 
     async def position_size(self) -> float:
 
@@ -236,7 +236,7 @@ class Botti:
         try:
             response = await self.okx.private_get_account_max_size({'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': 'BTC', 'leverage': 2})
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('position size', e)
+            self.log_exception(e)
         finally:
             return float(response.get('data')[0].get('maxBuy')) * (1 - self.fee)**2
 
@@ -244,7 +244,7 @@ class Botti:
         try:
             await self.okx.create_order(self.symbol, type, side, size, price, params)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('create order', e)
+            self.log_exception(e)
 
     async def check_open_position(self):
 
@@ -262,7 +262,7 @@ class Botti:
                 self.cache.clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('check open positions', e)
+            self.log_exception(e)
 
     async def orders_history(self):
 
@@ -280,7 +280,7 @@ class Botti:
                 self.handle_orders(orders)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('orders history', e)
+            self.log_exception(e)
 
     async def watch_trades(self):
 
@@ -303,7 +303,8 @@ class Botti:
 
                     # take profits
                     if self.take_profits():
-                        await self.create_order('fok', 'sell', self.cache.position.open_amount, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        bid = self.market_depth('bids', self.p_t, self.cache.position.open_amount)
+                        await self.create_order('fok', 'sell', self.cache.position.open_amount, bid, params={'tdMode': 'cross', 'posSide': 'long'})
                         logger.info(
                             '{id} take profits - target hit'.format(id=self.okx.id))
                         send_sms('profits', 'target hit {}'.format(
@@ -312,7 +313,7 @@ class Botti:
                 self.okx.trades[self.symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('watch trades', e)
+            self.log_exception(e)
 
             # make sure run recieves the error to retry
             if type(e).__name__ == 'NetworkError':
@@ -324,7 +325,7 @@ class Botti:
             while True:
                 self.order_book = await self.okx.watch_order_book(self.symbol, limit=100)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('watch order book', e)
+            self.log_exception(e)
 
             # make sure run recieves the error to retry
             if type(e).__name__ == 'NetworkError':
@@ -344,7 +345,7 @@ class Botti:
                 self.handle_orders(orders, True)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('watch orders', e)
+            self.log_exception(e)
 
             # make sure run recieves the error to retry
             if type(e).__name__ == 'NetworkError':
@@ -357,7 +358,7 @@ class Botti:
                 print(self.okx.iso8601(int(status.get('begin'))), self.okx.iso8601(int(status.get('end'))), status.get(
                     'serviceType'), status.get('state'), status.get('system'), status.get('title'))
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('system status', e)
+            self.log_exception(e)
 
             # make sure run recieves the error to retry
             if type(e).__name__ == 'NetworkError':
@@ -396,7 +397,7 @@ class Botti:
             self.loop.run_until_complete(asyncio.gather(*loops))
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('run', e)
+            self.log_exception(e)
 
             # raise NetworkError to be recieved by retrier
             if type(e).__name__ == 'NetworkError':
