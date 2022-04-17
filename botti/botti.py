@@ -52,16 +52,19 @@ class Botti:
         self.loop.close()
 
     def log_exception(self, e: Exception) -> None:
-        stack = traceback.extract_tb(e.__traceback__, -1).pop(-1)
-        logger.error('{id} - {file} - {f} - {t}'.format(id=self.okx.id,
-                     file=stack.filename, f=stack.name, t=type(e).__name__))
-        send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(
-            id=self.okx.id, origin=stack.filename + ' ' + stack.name, t=type(e).__name__))
 
-        # logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=type(exception).__name__))
-        # send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=type(exception).__name__))
+        frame = None
 
-    # FIXME: fix to work with asks
+        stack = traceback.extract_tb(e.__traceback__)
+
+        root = os.path.dirname(os.path.abspath(__file__))
+        for s in stack:
+            if root in s.filename:
+                frame = s
+
+        logger.error('{id} - {file} - {f} - {t}'.format(id=self.okx.id, file=frame.filename, f=frame.name, t=type(e).__name__))
+        send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(id=self.okx.id, origin=frame.filename + ' ' + frame.name, t=type(e).__name__))
+
     def market_depth(self, side: str, price: float, size: float) -> float:
 
         orders = np.asarray(self.order_book.get(side))
@@ -76,8 +79,15 @@ class Botti:
         if 'asks' in side and orders[-1][0] < price:
             return price
 
-        # find index where price < orders price
-        index_arr = np.argwhere(price < orders[:, 0])
+        index_arr: np.ndarray
+        if 'bids' in side:
+            # find index where price < orders price
+            index_arr = np.argwhere(price < orders[:, 0])
+
+        if 'asks' in side:
+            # find index where price > orders price
+            index_arr = np.argwhere(price > orders[:, 0])
+
         if index_arr.size > 0:
             # create orders slice and reverse
             orders = orders[:index_arr[-1][0]+1][::-1]
@@ -302,7 +312,8 @@ class Botti:
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        price = self.market_depth('asks', self.p_t, size)
+                        await self.create_order('fok', 'buy', size, price, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
@@ -379,7 +390,7 @@ class Botti:
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': {'watchOrderBook': {'depth': 'books'}}
+                'options': { 'watchOrderBook': { 'depth': 'books' }}
             })
 
             self.okx.set_sandbox_mode(self.test)
