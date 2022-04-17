@@ -124,18 +124,23 @@ class Botti:
         if 'closed' not in self.cache.position.status:
             return False
 
-        if not self.cache.last.id:
+        if 'closed' in self.cache.position.status:
             logger.info('{id} trailing entry - no trades found'.format(id=self.okx.id))
             return True
 
-        # upper limit
-        if self.p_t > (self.cache.last.close_avg * 1.01):
-            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
-            return True
+        # if not self.cache.last.id:
+        #     logger.info('{id} trailing entry - no trades found'.format(id=self.okx.id))
+        #     return True
 
-        if self.p_t < (self.cache.last.close_avg * 0.98):
-            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(id=self.okx.id), limit=self.cache.last.close_avg * 0.98)
-            return True
+        # # upper limit
+        # if self.p_t > (self.cache.last.close_avg * 1.01):
+        #     logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
+        #     return True
+
+        # # lower limit
+        # if self.p_t < (self.cache.last.close_avg * 0.98):
+        #     logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(id=self.okx.id), limit=self.cache.last.close_avg * 0.98)
+        #     return True
 
         return False
 
@@ -287,8 +292,7 @@ class Botti:
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size() 
-                        price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
-                        await self.create_order('fok', 'buy', size, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('fok', 'buy', size, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
                         
                     # take profits
                     if self.take_profits():
@@ -337,7 +341,6 @@ class Botti:
 
                     if order.get('status') in ['canceled', 'expired', 'rejected']:
 
-                        # TODO: will this produce any unwanted side effects...?
                         if self.cache.position.get('status') == 'pending':
                             self.cache.clear()
 
@@ -363,39 +366,39 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e) 
 
-    async def consume(self):
+    # async def consume(self):
 
-        await asyncio.sleep(5)
+    #     await asyncio.sleep(5)
 
-        try: 
-            while True:
+    #     try: 
+    #         while True:
 
-                # break even
-                price, ok = self.break_even()
-                if ok:
-                    await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+    #             # break even
+    #             price, ok = self.break_even()
+    #             if ok:
+    #                 await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
 
-                # trailing entry
-                if self.trailing_entry():
-                    size = await self.position_size() * 0.5
-                    price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
-                    await self.create_order('market', 'buy', size, None, params = { 'tdMode': 'cross', 'posSide': 'long' })
+    #             # trailing entry
+    #             if self.trailing_entry():
+    #                 size = await self.position_size() * 0.5
+    #                 price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
+    #                 await self.create_order('market', 'buy', size, None, params = { 'tdMode': 'cross', 'posSide': 'long' })
                     
-                # take profits
-                if self.take_profits():
-                    await self.create_order('fok', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
-                    logger.info('{id} take profits - target hit'.format(id=self.okx.id))
-                    send_sms('profits', 'target hit {}'.format(self.cache.last.pnl(self.leverage)))
+    #             # take profits
+    #             if self.take_profits():
+    #                 await self.create_order('fok', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
+    #                 logger.info('{id} take profits - target hit'.format(id=self.okx.id))
+    #                 send_sms('profits', 'target hit {}'.format(self.cache.last.pnl(self.leverage)))
 
-                # if an open or close order is created wait until watch orders receives it.
-                # await self.event.wait()
+    #             # if an open or close order is created wait until watch orders receives it.
+    #             # await self.event.wait()
 
-        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            self.log_exception('consume', e)
+    #     except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+    #         self.log_exception('consume', e)
 
-            # make sure run recieves the error to retry
-            if type(e).__name__ == 'NetworkError':
-                raise ccxtpro.NetworkError(e) 
+    #         # make sure run recieves the error to retry
+    #         if type(e).__name__ == 'NetworkError':
+    #             raise ccxtpro.NetworkError(e) 
 
     async def system_status(self):
         try: 
