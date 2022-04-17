@@ -6,6 +6,7 @@ import numpy as np
 import asyncio
 import json
 import os
+import traceback
 
 from botti.exchange import Exchange
 from botti.cache import Cache
@@ -51,9 +52,13 @@ class Botti:
         self.loop.run_until_complete(self.okx.close())
         self.loop.close()
 
-    def log_exception(self, origin, exception) -> None:
-        logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=type(exception).__name__))
-        send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=type(exception).__name__))
+    def log_exception(self, e) -> None:
+        stack = traceback.extract_tb(e.__traceback__, -1).pop(-1)
+        logger.error('{id} - {file} - {f} - {t}'.format(id=self.okx.id, file=stack.filename, f=stack.name, t=type(e).__name__))
+        send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(id=self.okx.id, origin=stack.filename + ' ' + stack.name, t=type(e).__name__))
+
+        # logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=type(exception).__name__))
+        # send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=type(exception).__name__))
 
     def market_depth(self, side, price, size) -> float:
 
