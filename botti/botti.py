@@ -306,16 +306,14 @@ class Botti:
                     if ok:
                         await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
 
-                    # FIXME: give more consideration
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        await self.create_order('limit', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
-                        bid = self.market_depth('bids', self.p_t, self.cache.position.open_amount)
-                        await self.create_order('fok', 'sell', self.cache.position.open_amount, bid, params={'tdMode': 'cross', 'posSide': 'long'})
+                        await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
                         logger.info(
                             '{id} take profits - target hit'.format(id=self.okx.id))
                         send_sms('profits', 'target hit {}'.format(
