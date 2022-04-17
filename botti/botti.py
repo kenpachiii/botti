@@ -272,6 +272,7 @@ class Botti:
 
     # FIXME: what order type would work best?
     # what role does price play with fok?
+    # if there's enough liquidity between last price and fok price then order fills...?
     async def watch_trades(self):
 
         try:
@@ -284,7 +285,7 @@ class Botti:
                     # break even
                     price, ok = self.break_even()
                     if ok:
-                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
+                        await self.create_order('market', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
 
                     # trailing entry
                     if self.trailing_entry():
