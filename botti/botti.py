@@ -10,7 +10,6 @@ import traceback
 from botti.exchange import Exchange
 from botti.cache import Cache
 from botti.position import Position
-from botti.retrier import retrier
 from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
@@ -62,6 +61,7 @@ class Botti:
         # logger.error('{id} {origin} - {error}'.format(id=self.okx.id, origin=origin, error=type(exception).__name__))
         # send_sms('exception', 'origin: {id} {origin}\n\nmessage: {msg}'.format(id=self.okx.id, origin=origin, msg=type(exception).__name__))
 
+    # FIXME: fix to work with asks
     def market_depth(self, side: str, price: float, size: float) -> float:
 
         orders = np.asarray(self.order_book.get(side))
@@ -99,20 +99,21 @@ class Botti:
 
         break_even_price = position.open_avg * (1 + self.fee)**2
 
-        if self.p_t > break_even_price and position.triggered == 0:
+        # returns break_even_price or adjusted break_even_price
+        # FIXME: this could bring break even up into p_t and trigger which we don't want
+        bid = self.market_depth('bids', break_even_price,
+                                self.cache.position.open_amount)
+
+        if self.p_t > bid and position.triggered == 0:
             position.update({'triggered': 1})
             self.cache.update(position)
 
-        if self.p_t < break_even_price and position.triggered == 1:
+        if self.p_t < bid and position.triggered == 1:
             position.update({'triggered': 0})
             self.cache.update(position)
 
         if position.triggered == 0:
             return (0, False)
-
-        # returns break_even_price or adjusted break_even_price
-        bid = self.market_depth('bids', break_even_price,
-                                self.cache.position.open_amount)
 
         if ceil(self.p_t) == ceil(bid):
             logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} == {break_even}'.format(
