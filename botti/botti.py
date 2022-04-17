@@ -68,7 +68,7 @@ class Botti:
 
         # if worst bid price is greater than price, then return price
         # implies order book window is out of range
-        if 'bids' in side and orders[-1][0] > price: 
+        if 'bids' in side and orders[-1][0] > price:
             return price
 
         # if worst ask price is less than price, then return price
@@ -114,9 +114,6 @@ class Botti:
         bid = self.market_depth('bids', break_even_price,
                                 self.cache.position.open_amount)
 
-        # FIXME: breaking even doesn't always imply there's enough liquidity
-        # unless it was adjusted first
-        # fok indirectly solves this
         if ceil(self.p_t) == ceil(bid):
             logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} == {break_even}'.format(
                 exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
@@ -124,7 +121,6 @@ class Botti:
 
         return (0, False)
 
-    # FIXME: update to a moving window...?
     def trailing_entry(self) -> bool:
 
         if 'closed' not in self.cache.position.status:
@@ -250,9 +246,6 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('create order', e)
 
-        # reset event so consume waits on order
-        # self.event.clear()
-
     async def check_open_position(self):
 
         logger.info('{id} checking for open positions'.format(id=self.okx.id))
@@ -277,7 +270,6 @@ class Botti:
 
         response: dict = {}
         try:
-            # FIXME: params need to be 'smarter'
             # getting orders this way may not get cached by ccxtpro
             response = await self.okx.private_get_trade_orders_history({'instId': self.okx.market_id(self.symbol), 'instType': 'SWAP', 'limit': 100})
 
@@ -287,15 +279,9 @@ class Botti:
                     'data'), since=self.cache.position.timestamp + 1)
                 self.handle_orders(orders)
 
-                # once orders are processed re-start consuming
-                # self.event.set()
-
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('orders history', e)
 
-    # FIXME: what order type would work best?
-    # what role does price play with fok?
-    # if there's enough liquidity between last price and fok price then order fills...?
     async def watch_trades(self):
 
         try:
@@ -313,7 +299,7 @@ class Botti:
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        await self.create_order('limit', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
@@ -348,8 +334,6 @@ class Botti:
         try:
             while True:
 
-                # FIXME: ommiting symbol is the only way to get type ANY otherwise ccxt uses the market object
-                # which seems to produce unfavorable results
                 orders: list[dict] = await self.okx.watch_orders(self.symbol, limit=1)
 
                 with open('dump', 'w') as json_file:
@@ -359,49 +343,12 @@ class Botti:
 
                 self.handle_orders(orders, True)
 
-                # once orders are processed re-start consuming
-                # self.event.set()
-
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('watch orders', e)
 
             # make sure run recieves the error to retry
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)
-
-    # async def consume(self):
-
-    #     await asyncio.sleep(5)
-
-    #     try:
-    #         while True:
-
-    #             # break even
-    #             price, ok = self.break_even()
-    #             if ok:
-    #                 await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params = { 'tdMode': 'cross', 'posSide': 'long' })
-
-    #             # trailing entry
-    #             if self.trailing_entry():
-    #                 size = await self.position_size() * 0.5
-    #                 price = self.cache.last.close_avg if self.cache.last.close_avg != 0 else self.p_t
-    #                 await self.create_order('market', 'buy', size, None, params = { 'tdMode': 'cross', 'posSide': 'long' })
-
-    #             # take profits
-    #             if self.take_profits():
-    #                 await self.create_order('fok', 'sell', self.cache.position.open_amount, self.p_t, params = { 'tdMode': 'cross', 'posSide': 'long' })
-    #                 logger.info('{id} take profits - target hit'.format(id=self.okx.id))
-    #                 send_sms('profits', 'target hit {}'.format(self.cache.last.pnl(self.leverage)))
-
-    #             # if an open or close order is created wait until watch orders receives it.
-    #             # await self.event.wait()
-
-    #     except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-    #         self.log_exception('consume', e)
-
-    #         # make sure run recieves the error to retry
-    #         if type(e).__name__ == 'NetworkError':
-    #             raise ccxtpro.NetworkError(e)
 
     async def system_status(self):
         try:
@@ -416,8 +363,6 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)
 
-    # FIXME: ccxt docs claim to handle all retry attempts
-    # @retrier
     def run(self):
 
         logger.info('starting botti')
@@ -446,7 +391,6 @@ class Botti:
                 self.watch_orders(),
                 self.watch_order_book(),
                 self.watch_trades()
-                # self.consume()
             ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))
