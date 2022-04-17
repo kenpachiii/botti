@@ -92,8 +92,6 @@ class Botti:
 
         break_even_price = position.open_avg * (1 + self.fee)**2
 
-        # print(ceil(self.p_t), ceil(break_even_price), position.triggered)
-
         if self.p_t > break_even_price and position.triggered == 0:
             position.update({ 'triggered': 1 })
             self.cache.update(position)
@@ -112,8 +110,9 @@ class Botti:
             logger.info('{exchange_id} break even adjusted - {_id} {_symbol} {break_even} -> {adj_price}'.format(**vars(position), exchange_id=self.okx.id, break_even=break_even_price, adj_price=bid))
             break_even_price = bid
 
+        # FIXME: breaking even doesn't always imply there's enough liquidity
         if ceil(self.p_t) == ceil(break_even_price):
-            logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} < {break_even}'.format(exchange_id=self.okx.id, **vars(position), p_t=self.p_t, break_even=break_even_price))
+            logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} == {break_even}'.format(exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(break_even_price)))
             return (break_even_price, True)
 
         return (0, False)
@@ -271,6 +270,8 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception('orders history', e)
 
+    # FIXME: what order type would work best?
+    # what role does price play with fok?
     async def watch_trades(self):
 
         try:
