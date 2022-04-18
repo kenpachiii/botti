@@ -149,7 +149,7 @@ class Botti:
         # lower limit
         if self.p_t < (self.cache.last.close_avg * 0.98):
             logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(
-                id=self.okx.id), limit=self.cache.last.close_avg * 0.98)
+                id=self.okx.id, limit=self.cache.last.close_avg * 0.98))
             return True
 
         return False
