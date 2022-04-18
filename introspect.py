@@ -1,5 +1,7 @@
 import logging
 import json
+import os
+import datetime
 
 from botti.cache import Cache
 
@@ -23,4 +25,13 @@ introspect = Introspect()
 
 # best bid > price > worst bid
 
-print(not (introspect.order_book.get('bids')[0][0] > 39540.9 > introspect.order_book.get('bids')[1][0]))
+def dump() -> None:
+
+    path = os.path.join(os.getcwd(), 'dump')
+    if not os.path.exists(path):
+        os.mkdir(path)
+
+    filename = 'order_book-' + datetime.datetime.now().isoformat()
+    print(filename)
+
+dump()

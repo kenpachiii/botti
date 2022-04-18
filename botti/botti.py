@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import traceback
+import datetime
 
 from botti.exchange import Exchange
 from botti.cache import Cache
@@ -63,6 +64,24 @@ class Botti:
 
         logger.error('{id} - {file} - {f} - {t}'.format(id=self.okx.id, file=frame.filename, f=frame.name, t=type(e).__name__))
         send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(id=self.okx.id, origin=frame.filename + ' ' + frame.name, t=type(e).__name__))
+
+    def dump(self) -> None:
+
+        path = os.path.join(os.getcwd(), 'dump')
+        if not os.path.exists(path):
+            os.mkdir(path)
+
+        filename = 'order_book-' + datetime.datetime.now().isoformat()
+        with open(os.path.join(path, filename), 'w') as json_file:
+            json.dump(self.okx.orderbooks, json_file,
+                    indent=4,
+                    separators=(',', ': '))
+
+        filename = 'trades-' + datetime.datetime.now().isoformat()
+        with open(os.path.join(path, filename), 'w') as json_file:
+            json.dump(self.okx.trades, json_file,
+                    indent=4,
+                    separators=(',', ': '))
 
     def market_depth(self, side: str, price: float, size: float) -> float:
 
@@ -253,6 +272,9 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
+        # dump cache to be inspected 
+        self.dump()
+
     async def check_open_position(self):
 
         logger.info('{id} checking for open positions'.format(id=self.okx.id))
@@ -303,11 +325,6 @@ class Botti:
                     price, ok = self.break_even()
                     if ok:
                         await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
-
-                        with open('order_book_dump', 'w') as json_file:
-                            json.dump(self.okx.orderbooks, json_file,
-                                    indent=4,
-                                    separators=(',', ': '))
 
                     # trailing entry
                     if self.trailing_entry():
