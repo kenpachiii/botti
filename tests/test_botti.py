@@ -35,10 +35,8 @@ async def test_add_position(mocker):
 
 @pytest.mark.asyncio
 async def test_update_position(mocker):
-
     botti = patch_botti(mocker)
 
-  
 
 @pytest.mark.asyncio
 async def test_trailing_entry(mocker):
