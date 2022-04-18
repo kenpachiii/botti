@@ -156,7 +156,7 @@ class Botti:
         return False
 
     def take_profits(self):
-        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.01
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.05
 
     def handle_orders(self, orders: list, clear=False):
 
@@ -306,6 +306,11 @@ class Botti:
                     if ok:
                         await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
 
+                        with open('order_book_dump', 'w') as json_file:
+                            json.dump(self.okx.order_book, json_file,
+                                    indent=4,
+                                    separators=(',', ': '))
+
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
@@ -345,12 +350,6 @@ class Botti:
             while True:
 
                 orders: list[dict] = await self.okx.watch_orders(self.symbol, limit=1)
-
-                with open('dump', 'w') as json_file:
-                    json.dump(self.okx.orders, json_file,
-                              indent=4,
-                              separators=(',', ': '))
-
                 self.handle_orders(orders, True)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
