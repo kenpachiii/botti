@@ -67,21 +67,26 @@ class Botti:
 
     def dump(self) -> None:
 
-        path = os.path.join(os.getcwd(), 'dump')
-        if not os.path.exists(path):
-            os.mkdir(path)
+        try:
 
-        filename = 'order_book-' + datetime.datetime.now().isoformat()
-        with open(os.path.join(path, filename), 'w') as json_file:
-            json.dump(self.okx.orderbooks, json_file,
-                    indent=4,
-                    separators=(',', ': '))
+            path = os.path.join(os.getcwd(), 'dump')
+            if not os.path.exists(path):
+                os.mkdir(path)
 
-        filename = 'trades-' + datetime.datetime.now().isoformat()
-        with open(os.path.join(path, filename), 'w') as json_file:
-            json.dump(self.okx.trades, json_file,
-                    indent=4,
-                    separators=(',', ': '))
+            filename = 'order_book-' + datetime.datetime.now().isoformat()
+            with open(os.path.join(path, filename), 'w') as json_file:
+                json.dump(self.okx.orderbooks, json_file,
+                        indent=4,
+                        separators=(',', ': '))
+
+            filename = 'trades-' + datetime.datetime.now().isoformat()
+            with open(os.path.join(path, filename), 'w') as json_file:
+                json.dump(self.okx.trades, json_file,
+                        indent=4,
+                        separators=(',', ': '))
+
+        except Exception as e:
+            self.log_exception(e)
 
     def market_depth(self, side: str, price: float, size: float) -> float:
 
