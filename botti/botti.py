@@ -8,12 +8,9 @@ import os
 import traceback
 import datetime
 
-import sdnotify
-
 from botti.exchange import Exchange
 from botti.cache import Cache
 from botti.position import Position
-from botti.retrier import retrier
 from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
@@ -42,11 +39,6 @@ class Botti:
 
         self.okx: Exchange = ccxtpro.okx
 
-        self._sd_notify = sdnotify.SystemdNotifier()
-
-    def _notify(self, message: str) -> None:
-        self._sd_notify.notify(message)
-
     def __del__(self):
         """
         Destructor - clean up async stuff
@@ -57,7 +49,6 @@ class Botti:
         logger.info('{id} closed connection'.format(id=self.okx.id))
         self.loop.run_until_complete(self.okx.close())
         self.loop.close()
-        self._notify("STOPPING=1")
 
     def log_exception(self, e: Exception) -> None:
 
@@ -402,12 +393,13 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)
 
+    async def throw(self):
+        if await asyncio.sleep(60, True):
+            raise ccxtpro.NetworkError
+
     def run(self):
 
         logger.info('starting botti')
-
-        # Tell systemd that we completed initialization phase
-        self._notify("READY=1")
 
         try:
 
@@ -432,7 +424,8 @@ class Botti:
             loops = [
                 self.watch_orders(),
                 self.watch_order_book(),
-                self.watch_trades()
+                self.watch_trades(),
+                self.throw()
             ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))
@@ -443,3 +436,5 @@ class Botti:
             # raise NetworkError to be recieved by retrier
             if type(e).__name__ == 'NetworkError':
                 self.close()
+
+                raise ccxtpro.NetworkError(e)
