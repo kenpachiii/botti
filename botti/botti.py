@@ -10,6 +10,7 @@ import traceback
 from botti.exchange import Exchange
 from botti.cache import Cache
 from botti.position import Position
+from botti.retrier import retrier
 from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
@@ -301,6 +302,7 @@ class Botti:
                 for trade in trades:
                     self.p_t = trade.get('price')
 
+                    # FIXME: at time there's large gaps forcing a higher then desired break even
                     # break even
                     price, ok = self.break_even()
                     if ok:
@@ -372,6 +374,7 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)
 
+    @retrier
     def run(self):
 
         logger.info('starting botti')
