@@ -307,7 +307,7 @@ class Botti:
                         await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
 
                         with open('order_book_dump', 'w') as json_file:
-                            json.dump(self.okx.order_book, json_file,
+                            json.dump(self.okx.order_book(), json_file,
                                     indent=4,
                                     separators=(',', ': '))
 
