@@ -156,7 +156,7 @@ class Botti:
         return False
 
     def take_profits(self):
-        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.05
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.01
 
     def handle_orders(self, orders: list, clear=False):
 
