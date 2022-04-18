@@ -68,14 +68,12 @@ class Botti:
 
         orders = np.asarray(self.order_book.get(side))
 
-        # if worst bid price is greater than price, then return price
-        # implies order book window is out of range
-        if 'bids' in side and orders[-1][0] > price:
+        # best bid > price > worst bid
+        if 'bids' in side and not (orders[0][0] > price > orders[-1][0]):
             return price
 
-        # if worst ask price is less than price, then return price
-        # implies order book window is out of range
-        if 'asks' in side and orders[-1][0] < price:
+        # best ask < price < worst ask
+        if 'asks' in side and not (orders[0][0] < price < orders[-1][0]):
             return price
 
         index_arr: np.ndarray

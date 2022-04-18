@@ -1,43 +1,26 @@
 import logging
-import ccxtpro
+import json
 
 from botti.cache import Cache
 
 logger = logging.getLogger(__name__)
 
+class Introspect:
 
-class Class:
+    def __init__(self, **kwargs):
 
-    def __init__(self):
-
-        self.okx = ccxtpro.okx
+        self.order_book = json.loads(open('order_book_dump').read())['BTC/USDT:USDT']
         self.cache = Cache('botti.db.dump')
-        self.p_t = 0
 
-    def trailing_entry(self) -> bool:
+    def dump_cache(self):
+        self.cache.all()
 
-        if 'closed' not in self.cache.position.status:
-            return False
-
-        if not self.cache.last.id:
-            logger.info(
-                '{id} trailing entry - no trades found'.format(id=self.okx.id))
-            return True
-
-        # upper limit
-        if self.p_t > (self.cache.last.close_avg * 1.01):
-            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
-            return True
-
-        # lower limit
-        if self.p_t < (self.cache.last.close_avg * 0.98):
-            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * 0.98))
-            return True
-
-        return False
+    def dump_order_book(self):
+        print(self.order_book)
 
 
-test = Class()
-test.trailing_entry()
+introspect = Introspect()
+
+# best bid > price > worst bid
+
+print(not (introspect.order_book.get('bids')[0][0] > 39540.9 > introspect.order_book.get('bids')[1][0]))
