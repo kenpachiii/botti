@@ -73,13 +73,15 @@ class Botti:
             if not os.path.exists(path):
                 os.mkdir(path)
 
-            filename = 'order_book-' + datetime.datetime.now().isoformat()
+            timestamp = datetime.datetime.now().isoformat()
+
+            filename = 'order_book-' + timestamp
             with open(os.path.join(path, filename), 'w') as json_file:
                 json.dump(self.okx.orderbooks, json_file,
                         indent=4,
                         separators=(',', ': '))
 
-            filename = 'trades-' + datetime.datetime.now().isoformat()
+            filename = 'trades-' + timestamp
             with open(os.path.join(path, filename), 'w') as json_file:
                 json.dump(self.okx.trades, json_file,
                         indent=4,
@@ -334,7 +336,7 @@ class Botti:
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        await self.create_order('limit', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():

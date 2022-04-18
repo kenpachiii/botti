@@ -11,8 +11,8 @@ class Introspect:
 
     def __init__(self, **kwargs):
 
-        self.order_book = json.loads(open('order_book_dump').read())['BTC/USDT:USDT']
-        self.cache = Cache('botti.db.dump')
+        self.order_book = json.loads(open('./dump/order_book-2022-04-18T17:22:12.095802').read())['BTC/USDT:USDT']
+        # self.cache = Cache('botti.db.dump')
 
     def dump_cache(self):
         self.cache.all()
@@ -23,15 +23,5 @@ class Introspect:
 
 introspect = Introspect()
 
-# best bid > price > worst bid
 
-def dump() -> None:
-
-    path = os.path.join(os.getcwd(), 'dump')
-    if not os.path.exists(path):
-        os.mkdir(path)
-
-    filename = 'order_book-' + datetime.datetime.now().isoformat()
-    print(filename)
-
-dump()
+# print(not (introspect.order_book.get('bids')[0][0] > 39939.90 > introspect.order_book.get('bids')[-1][0]))
