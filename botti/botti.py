@@ -54,10 +54,10 @@ class Botti:
         self.close()
 
     def close(self):
-        self._notify("STOPPING=1")
         logger.info('{id} closed connection'.format(id=self.okx.id))
         self.loop.run_until_complete(self.okx.close())
         self.loop.close()
+        self._notify("STOPPING=1")
 
     def log_exception(self, e: Exception) -> None:
 
