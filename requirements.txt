@@ -1,3 +1,4 @@
 numpy==1.22.3
 ccxtpro==1.0.62
 asyncio==3.4.3
+sdnotify==0.3.2

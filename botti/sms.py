@@ -20,7 +20,6 @@ def profits(server: smtplib.SMTP, recipients: list, msg: str):
 
 def send_sms(type: str, msg: str) -> None:
     try:
-
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
 
             server.ehlo()
@@ -43,6 +42,7 @@ def send_sms(type: str, msg: str) -> None:
             server.close()
 
     except Exception as e:
-        logger.error('error sending sms {}'.format(str(e)))
+        logger.error('failed sending sms {}'.format(str(e)))
+        pass
 
     

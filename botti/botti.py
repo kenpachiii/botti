@@ -1,4 +1,4 @@
-from math import ceil
+from math import ceil, floor
 import ccxtpro
 import logging
 import numpy as np
@@ -7,6 +7,8 @@ import json
 import os
 import traceback
 import datetime
+
+import sdnotify
 
 from botti.exchange import Exchange
 from botti.cache import Cache
@@ -30,7 +32,7 @@ class Botti:
         self.password: str = kwargs.get('password')
         self.test: bool = kwargs.get('test')
 
-        self.symbol: str = 'BTC/USDT:USDT'
+        self.symbol: str = 'LOOKS/USDT:USDT'
         self.fee: float = 0.0005
         self.leverage: int = 2
 
@@ -39,6 +41,14 @@ class Botti:
         self.order_book: dict = {}
 
         self.okx: Exchange = ccxtpro.okx
+
+        self._sd_notify = sdnotify.SystemdNotifier()
+
+        # Tell systemd that we completed initialization phase
+        self._notify("READY=1")
+
+    def _notify(self, message: str) -> None:
+        self._sd_notify.notify(message)
 
     def __del__(self):
         """
@@ -50,6 +60,7 @@ class Botti:
         logger.info('{id} closed connection'.format(id=self.okx.id))
         self.loop.run_until_complete(self.okx.close())
         self.loop.close()
+        self._notify("STOPPING=1")
 
     def log_exception(self, e: Exception) -> None:
 
@@ -94,11 +105,11 @@ class Botti:
 
         orders = np.asarray(self.order_book.get(side))
 
-        # best bid > price > worst bid
+        # bid window = best bid > price > worst bid
         if 'bids' in side and not (orders[0][0] > price > orders[-1][0]):
             return price
 
-        # best ask < price < worst ask
+        # ask window = best ask < price < worst ask
         if 'asks' in side and not (orders[0][0] < price < orders[-1][0]):
             return price
 
@@ -267,7 +278,7 @@ class Botti:
         response: dict = None
 
         try:
-            response = await self.okx.private_get_account_max_size({ 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': 'BTC', 'leverage': 2 })
+            response = await self.okx.private_get_account_max_size({ 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': self.okx.markets.get(self.okx.market_id(self.symbol)).get('code'), 'leverage': self.leverage })
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
         finally:
@@ -336,7 +347,7 @@ class Botti:
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        await self.create_order('fok', 'buy', floor(size), self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
@@ -394,7 +405,6 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)
 
-    @retrier
     def run(self):
 
         logger.info('starting botti')
@@ -433,4 +443,3 @@ class Botti:
             # raise NetworkError to be recieved by retrier
             if type(e).__name__ == 'NetworkError':
                 self.close()
-                raise ccxtpro.NetworkError(e)

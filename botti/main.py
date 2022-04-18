@@ -30,5 +30,5 @@ def main():
 
     setup_logging_pre()
 
-    botti = Botti(**api_keys['demo'])
+    botti = Botti(**api_keys['botti-api'])
     botti.run()

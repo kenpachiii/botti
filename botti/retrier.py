@@ -14,7 +14,7 @@ def retrier(_func=None):
             except (ccxtpro.NetworkError) as ex:
                 msg = f'{f.__name__}() returned exception: "{ex}". '
                 logger.warning(msg + f'Will retry in 3 seconds.')
-                time.sleep(3)
+                time.sleep(10)
                 return wrapper(*args, **kwargs)
         return wrapper
     return decorator(_func)
