@@ -39,8 +39,6 @@ class Botti:
 
         self.okx: Exchange = ccxtpro.okx
 
-        self.event = asyncio.Event()
-
     def __del__(self):
         """
         Destructor - clean up async stuff
@@ -245,7 +243,7 @@ class Botti:
         response: dict = None
 
         try:
-            response = await self.okx.private_get_account_max_size({'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': 'BTC', 'leverage': 2})
+            response = await self.okx.private_get_account_max_size({ 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': 'BTC', 'leverage': 2 })
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
         finally:
@@ -339,7 +337,7 @@ class Botti:
 
         try:
             while True:
-                self.order_book = await self.okx.watch_order_book(self.symbol, limit=100)
+                self.order_book = await self.okx.watch_order_book(self.symbol, limit=10)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 

@@ -18,15 +18,24 @@ def patch_cache(mocker):
     return cache
 
 def test_insert(mocker):
+
+    cache = patch_cache(mocker)
+
     return
 
 def test_update(mocker):
+
+    cache = patch_cache(mocker)
     return
 
 def test_position(mocker):
+
+    cache = patch_cache(mocker)
     return
 
 def test_last(mocker):
+
+    cache = patch_cache(mocker)
     return
 
 if __name__ == '__main__':
