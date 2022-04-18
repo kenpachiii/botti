@@ -393,10 +393,6 @@ class Botti:
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)
 
-    async def throw(self):
-        if await asyncio.sleep(60, True):
-            raise ccxtpro.NetworkError
-
     def run(self):
 
         logger.info('starting botti')
@@ -424,8 +420,7 @@ class Botti:
             loops = [
                 self.watch_orders(),
                 self.watch_order_book(),
-                self.watch_trades(),
-                self.throw()
+                self.watch_trades()
             ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))
@@ -433,7 +428,7 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
-            # raise NetworkError to be recieved by retrier
+            # raise NetworkError close and raise so systemd restarts
             if type(e).__name__ == 'NetworkError':
                 self.close()
 
