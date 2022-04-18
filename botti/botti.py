@@ -44,9 +44,6 @@ class Botti:
 
         self._sd_notify = sdnotify.SystemdNotifier()
 
-        # Tell systemd that we completed initialization phase
-        self._notify("READY=1")
-
     def _notify(self, message: str) -> None:
         self._sd_notify.notify(message)
 
@@ -408,6 +405,9 @@ class Botti:
     def run(self):
 
         logger.info('starting botti')
+
+        # Tell systemd that we completed initialization phase
+        self._notify("READY=1")
 
         try:
 
