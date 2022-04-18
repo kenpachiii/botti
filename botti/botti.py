@@ -29,7 +29,7 @@ class Botti:
         self.password: str = kwargs.get('password')
         self.test: bool = kwargs.get('test')
 
-        self.symbol: str = 'LOOKS/USDT:USDT'
+        self.symbol: str = 'BTC/USDT:USDT'
         self.fee: float = 0.0005
         self.leverage: int = 2
 
