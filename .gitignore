@@ -4,3 +4,4 @@
 **/__pycache__/
 id_*
 token
+config.json

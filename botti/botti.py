@@ -29,9 +29,9 @@ class Botti:
         self.password: str = kwargs.get('password')
         self.test: bool = kwargs.get('test')
 
-        self.symbol: str = 'BTC/USDT:USDT'
-        self.fee: float = 0.0005
-        self.leverage: int = 2
+        self.symbol: str = kwargs.get('symbol')
+        self.fee: float = kwargs.get('fee')
+        self.leverage: int = kwargs.get('leverage')
 
         self.p_t = 0
         self.cache: Cache = Cache()
@@ -266,7 +266,7 @@ class Botti:
         response: dict = None
 
         try:
-            response = await self.okx.private_get_account_max_size({ 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': self.okx.markets.get(self.okx.market_id(self.symbol)).get('code'), 'leverage': self.leverage })
+            response = await self.okx.private_get_account_max_size({ 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': self.okx.markets.get(self.symbol).get('base'), 'leverage': self.leverage })
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
         finally:
@@ -335,7 +335,9 @@ class Botti:
                     # trailing entry
                     if self.trailing_entry():
                         size = await self.position_size()
-                        await self.create_order('fok', 'buy', floor(size), self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        # FIXME: how to properly adjust...?
+
+                        await self.create_order('fok', 'buy', ceil(size), self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
@@ -343,7 +345,7 @@ class Botti:
                         logger.info(
                             '{id} take profits - target hit'.format(id=self.okx.id))
                         send_sms('profits', 'target hit {}'.format(
-                            self.cache.last.pnl(self.leverage)))
+                            self.cache.position.pnl(self.leverage)))
 
                 self.okx.trades[self.symbol].clear()
 

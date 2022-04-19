@@ -30,5 +30,5 @@ def main():
 
     setup_logging_pre()
 
-    botti = Botti(**api_keys['demo'])
+    botti = Botti(symbol='LOOKS/USDT:USDT', fee = 0.0005, leverage = 2, **api_keys['botti-api'])
     botti.run()
