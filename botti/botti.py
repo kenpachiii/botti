@@ -261,16 +261,21 @@ class Botti:
         except Exception as e:
             self.log_exception(e)
 
-    async def position_size(self) -> float:
+    async def position_size(self, side: str = 'long') -> float:
 
         response: dict = None
 
         try:
-            response = await self.okx.private_get_account_max_size({ 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': self.okx.markets.get(self.symbol).get('base'), 'leverage': self.leverage })
+            params = { 'instId': self.okx.market_id(self.symbol), 'tdMode': 'cross', 'ccy': self.okx.markets.get(self.symbol).get('base'), 'leverage': self.leverage }
+            response = await self.okx.private_get_account_max_size(params)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
         finally:
-            return float(response.get('data')[0].get('maxBuy')) * (1 - self.fee)**2
+
+            data = response.get('data')[0]
+            sz = data.get('maxBuy') if 'long' in side else data.get('maxSell')
+
+            return float(sz) 
 
     async def create_order(self, type: str, side: str, size: float, price: float = None, params: dict = {}) -> None:
         try:
@@ -334,10 +339,13 @@ class Botti:
 
                     # trailing entry
                     if self.trailing_entry():
-                        size = await self.position_size()
-                        # FIXME: how to properly adjust...?
 
-                        await self.create_order('fok', 'buy', ceil(size), self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+                        size = await self.position_size('long')
+                        if size == 0:
+                            logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
+                            continue
+
+                        await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
 
                     # take profits
                     if self.take_profits():
