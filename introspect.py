@@ -1,7 +1,4 @@
 import logging
-import json
-import os
-import datetime
 
 from botti.cache import Cache
 
@@ -22,7 +19,7 @@ class Introspect:
 
 
 introspect = Introspect()
-print(introspect.cache.all())
+print(vars(introspect.cache.position))
 
 
 # print(not (introspect.order_book.get('bids')[0][0] > 39939.90 > introspect.order_book.get('bids')[-1][0]))

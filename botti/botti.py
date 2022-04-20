@@ -254,6 +254,9 @@ class Botti:
                 if position.open_amount == 0:
                     position.update({'status': 'closed'})
 
+                    if position.pnl(self.leverage) > 0:
+                        send_sms('profits', 'position closed +{}%'.format(position.pnl(self.leverage)))
+
             logger.info('{exchange_id} update position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status} {pnl}'.format(
                 exchange_id=self.okx.id, pnl=position.pnl(self.leverage) if position.open_amount == 0 else '', **vars(position)))
             self.cache.update(position)
@@ -350,10 +353,7 @@ class Botti:
                     # take profits
                     if self.take_profits():
                         await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
-                        logger.info(
-                            '{id} take profits - target hit'.format(id=self.okx.id))
-                        send_sms('profits', 'target hit {}'.format(
-                            self.cache.position.pnl(self.leverage)))
+                        logger.info('{id} take profits - target hit'.format(id=self.okx.id))
 
                 self.okx.trades[self.symbol].clear()
 
