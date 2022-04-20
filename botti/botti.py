@@ -255,7 +255,7 @@ class Botti:
                     position.update({'status': 'closed'})
 
                     if position.pnl(self.leverage) > 0:
-                        send_sms('profits', 'position closed +{}%'.format(position.pnl(self.leverage)))
+                        send_sms('profits', 'position closed\n+{:.2f}%'.format(position.pnl(self.leverage)))
 
             logger.info('{exchange_id} update position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status} {pnl}'.format(
                 exchange_id=self.okx.id, pnl=position.pnl(self.leverage) if position.open_amount == 0 else '', **vars(position)))
@@ -334,7 +334,6 @@ class Botti:
                 for trade in trades:
                     self.p_t = trade.get('price')
 
-                    # FIXME: at time there's large gaps forcing a higher then desired break even
                     # break even
                     price, ok = self.break_even()
                     if ok:
