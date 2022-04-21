@@ -418,11 +418,12 @@ class Botti:
             })
 
             self.okx.set_sandbox_mode(self.test)
-            self.loop.run_until_complete(self.okx.load_markets(reload=False))
 
+           
+
+            self.loop.run_until_complete(self.okx.load_markets(reload=False))
             # make sure leverage is updated
-            self.loop.run_until_complete(self.okx.set_leverage(
-                self.leverage, self.symbol, params={'mgnMode': 'cross'}))
+            # self.loop.run_until_complete(self.okx.set_leverage(self.leverage, self.symbol, params={'mgnMode': 'cross'}))
 
             # required to repopulate an already opened position
             self.loop.run_until_complete(self.check_open_position())

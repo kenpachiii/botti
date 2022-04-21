@@ -7,9 +7,8 @@ logger = logging.getLogger(__name__)
 class Introspect:
 
     def __init__(self, **kwargs):
-
         # self.order_book = json.loads(open('./dump/order_book-2022-04-18T17:22:12.095802').read())['BTC/USDT:USDT']
-        self.cache = Cache('botti.db.dump')
+        self.cache = Cache('botti.db.btc')
 
     def dump_cache(self):
         self.cache.all()

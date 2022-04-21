@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class Cache:
 
-    def __init__(self, path = './botti.db') -> None:
+    def __init__(self, path = './botti.db.btc') -> None:
 
         try: 
             self.con: sqlite3.Connection = sqlite3.connect(path)
