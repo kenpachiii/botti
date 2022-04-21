@@ -46,8 +46,14 @@ class Botti:
         self.close()
 
     def close(self):
-        logger.info('{id} closed connection'.format(id=self.okx.id))
+        logger.info('{id} canceling tasks'.format(id=self.okx.id))
+        for task in asyncio.Task.all_tasks():
+            task.cancel()
+
         self.loop.run_until_complete(self.okx.close())
+        logger.info('{id} closed connection'.format(id=self.okx.id))
+
+        logger.info('{id} closed loop'.format(id=self.okx.id))
         self.loop.close()
 
     def log_exception(self, e: Exception) -> None:
@@ -419,8 +425,6 @@ class Botti:
 
             self.okx.set_sandbox_mode(self.test)
 
-           
-
             self.loop.run_until_complete(self.okx.load_markets(reload=False))
             # make sure leverage is updated
             # self.loop.run_until_complete(self.okx.set_leverage(self.leverage, self.symbol, params={'mgnMode': 'cross'}))
@@ -438,8 +442,7 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
-            # raise NetworkError close and raise so systemd restarts
+            # raise so systemd restarts otherwise let daemon shutdown
             if type(e).__name__ == 'NetworkError':
-                self.close()
-
+    
                 raise ccxtpro.NetworkError(e)
