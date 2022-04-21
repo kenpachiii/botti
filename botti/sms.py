@@ -31,7 +31,7 @@ def send_sms(type: str, msg: str) -> None:
                 recipients = ['9286323030@vtext.com']
 
             if type == 'profits':
-                recipients = ['9286323030@vtext.com'] # '3868372377@txt.att.net'
+                recipients = ['9286323030@vtext.com', '3868372377@txt.att.net'] 
 
             msg = MIMEText(msg)
             msg['From'] = 'botti.notification@gmail.com'

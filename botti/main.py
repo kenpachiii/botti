@@ -36,5 +36,5 @@ def main():
 
     setup_logging_pre()
 
-    botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 2, **api_keys['botti-api'])
+    botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 3, **api_keys['botti-api'])
     botti.run()

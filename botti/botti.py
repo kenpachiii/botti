@@ -172,9 +172,9 @@ class Botti:
             return True
 
         # upper limit
-        if self.p_t > (self.cache.last.close_avg * 1.01):
+        if self.p_t > (self.cache.last.close_avg * 1.02):
             logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
+                id=self.okx.id, limit=self.cache.last.close_avg * 1.02))
             return True
 
         # lower limit
@@ -186,7 +186,7 @@ class Botti:
         return False
 
     def take_profits(self):
-        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.05
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.01
 
     def handle_orders(self, orders: list, clear=False):
 
@@ -263,7 +263,7 @@ class Botti:
                     position.update({'status': 'closed'})
 
                     if position.pnl(self.leverage) > 0:
-                        send_sms('profits', 'position closed\n+{:.2f}%'.format(position.pnl(self.leverage)))
+                        send_sms('profits', 'position closed\n\n+{:.2f}%'.format(position.pnl(self.leverage)))
 
             logger.info('{exchange_id} update position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status} {pnl}'.format(
                 exchange_id=self.okx.id, pnl=position.pnl(self.leverage) if position.open_amount == 0 else '', **vars(position)))
@@ -431,7 +431,7 @@ class Botti:
 
             self.loop.run_until_complete(self.okx.load_markets(reload=False))
             # make sure leverage is updated
-            # self.loop.run_until_complete(self.okx.set_leverage(self.leverage, self.symbol, params={'mgnMode': 'cross'}))
+            self.loop.run_until_complete(self.okx.set_leverage(self.leverage, self.symbol, params={'mgnMode': 'cross'}))
 
             # required to repopulate an already opened position
             self.loop.run_until_complete(self.check_open_position())
