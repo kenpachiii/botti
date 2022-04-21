@@ -46,9 +46,11 @@ class Botti:
         self.close()
 
     def close(self):
-        logger.info('{id} canceling tasks'.format(id=self.okx.id))
-        for task in asyncio.Task.all_tasks():
-            task.cancel()
+
+        if len(asyncio.all_tasks(self.loop)) > 0:
+            logger.info('{id} canceling tasks'.format(id=self.okx.id))
+            for task in asyncio.all_tasks(self.loop):
+                task.cancel()
 
         self.loop.run_until_complete(self.okx.close())
         logger.info('{id} closed connection'.format(id=self.okx.id))
@@ -422,6 +424,8 @@ class Botti:
                 'password': self.password,
                 'options': { 'watchOrderBook': { 'depth': 'books' }}
             })
+
+            self.loop.run_until_complete(self.system_status())
 
             self.okx.set_sandbox_mode(self.test)
 
