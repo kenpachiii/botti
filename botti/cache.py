@@ -91,7 +91,7 @@ class Cache:
     # returns last open trade excluding currectly open trade if any
     def last(self) -> Position:
         try: 
-            values = self.cur.execute('''SELECT * FROM position WHERE status = 'closed';''').fetchone()
+            values = self.cur.execute('''SELECT * FROM position WHERE status = 'closed' ORDER BY timestamp DESC;''').fetchone()
             return Position({k: values[k] for k in values.keys()}) if values else Position({})
         except Exception as e:
             logger.error('position - {error}'.format(error=e))
