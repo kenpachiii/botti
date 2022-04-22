@@ -69,6 +69,9 @@ class Botti:
             if root in s.filename:
                 frame = s
 
+        if type(e).__name__ == 'NetworkError':
+            return
+
         logger.error('{id} - {file} - {f} - {t}'.format(id=self.okx.id, file=frame.filename, f=frame.name, t=type(e).__name__))
         send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(id=self.okx.id, origin=frame.filename + ' ' + frame.name, t=type(e).__name__))
 
