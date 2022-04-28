@@ -72,6 +72,12 @@ class Botti:
         if type(e).__name__ == 'NetworkError':
             return
 
+        # TODO: InvalidOrder typically gets thrown when multiple orders go through when only one is needed
+        # figure out a way to prevent multiple orders from happening in the first place instead of this temp fix
+        if type(e).__name__ == 'InvalidOrder':
+            logger.warning('{id} - {file} - {f} - {t}'.format(id=self.okx.id, file=frame.filename, f=frame.name, t=type(e).__name__))
+            return
+
         logger.error('{id} - {file} - {f} - {t}'.format(id=self.okx.id, file=frame.filename, f=frame.name, t=type(e).__name__))
         send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(id=self.okx.id, origin=frame.filename + ' ' + frame.name, t=type(e).__name__))
 
