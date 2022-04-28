@@ -281,6 +281,19 @@ class Botti:
         except Exception as e:
             self.log_exception(e)
 
+    async def portfolio_size(self) -> dict:
+
+        response: dict = None
+
+        try:
+            response = await self.okx.fetch_balance(params={ 'currency': 'usdt' })
+        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            self.log_exception(e)
+        finally:
+
+            total = response.get('total')
+            return total.get('USDT')
+  
     async def position_size(self, side: str = 'long') -> float:
 
         response: dict = None
