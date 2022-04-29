@@ -32,7 +32,7 @@ class Botti:
         self.symbol: str = kwargs.get('symbol')
         self.fee: float = kwargs.get('fee')
         self.leverage: int = kwargs.get('leverage')
-        self.sz_pct: int = kwargs.get('sz_pct')
+        self.sz_pct: int = kwargs.get('sz_pct') 
 
         self.p_t = 0
         self.cache: Cache = Cache()
@@ -320,7 +320,7 @@ class Botti:
             data = response.get('data')[0]
             sz = data.get('maxBuy') if 'long' in side else data.get('maxSell')
 
-            return float(sz * self.sz_pct) 
+            return float(sz) 
 
     async def create_order(self, type: str, side: str, size: float, price: float = None, params: dict = {}) -> None:
         try:
