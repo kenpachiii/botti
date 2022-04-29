@@ -1,3 +1,4 @@
+from decimal import DivisionByZero
 from typing import Any
 
 class Position:
@@ -75,5 +76,10 @@ class Position:
         x2: float = order.get('average') * order.get('filled')
         return (x1 + x2) / (self.get(amount) + order.get('filled'))
 
-    def pnl(self, leverage) -> float:
-        return (((self.close_avg - self.open_avg) / self.open_avg) * 100) * leverage
+    def pnl(self, leverage: float, close: float = 0) -> float:
+
+        try:
+            close = close if close > 0 else self.close_avg
+            return (((close - self.open_avg) / self.open_avg) * 100) * leverage
+        except DivisionByZero:
+            return 0.0
