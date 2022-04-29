@@ -170,6 +170,12 @@ class Botti:
 
         return (0, False)
 
+    def bid_ask_delta(self, side: str = 'bids', delta: float = 1.01) -> bool:
+
+        entry_side = self.order_book.get('bids') if side == 'bids' else self.order_book.get('asks')
+        exit_side = self.order_book.get('asks') if side == 'bids' else self.order_book.get('bids')
+        return np.sum(entry_side) / np.sum(exit_side) > delta
+
     def trailing_entry(self) -> bool:
 
         if 'closed' not in self.cache.position.status:
@@ -178,30 +184,24 @@ class Botti:
         if not self.cache.last.id:
             logger.info(
                 '{id} trailing entry - no trades found'.format(id=self.okx.id))
-            return True
+            return True and self.bid_ask_delta('bids')
 
         # upper limit
         if self.p_t > (self.cache.last.close_avg * 1.01):
             logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(
                 id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
-            return True
+            return True and self.bid_ask_delta('bids')
 
         # lower limit
         if self.p_t < (self.cache.last.close_avg * 0.99):
             logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(
                 id=self.okx.id, limit=self.cache.last.close_avg * 0.99))
-            return True
+            return True and self.bid_ask_delta('bids')
 
         return False
 
     def take_profits(self):
         return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.01
-
-    def early_exit(self):
-
-        position = self.cache.position
-
-        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and (((self.p_t - position.open_avg) / position.open_avg) * 100) * self.leverage < -50.0
 
     def handle_orders(self, orders: list, clear=False):
 
