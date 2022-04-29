@@ -459,8 +459,7 @@ class Botti:
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': { 'watchOrderBook': { 'depth': 'books' }},
-                # 'streaming': { 'keepAlive': 30000 }
+                'options': { 'watchOrderBook': { 'depth': 'books' }}
             })
 
             self.loop.run_until_complete(self.system_status())
