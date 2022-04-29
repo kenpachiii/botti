@@ -201,9 +201,7 @@ class Botti:
 
         position = self.cache.position
 
-        pnl = (((self.p_t - position.open_avg) / position.open_avg) * 100) * self.leverage
-
-        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and pnl < -0.5
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and (((self.p_t - position.open_avg) / position.open_avg) * 100) * self.leverage < -0.5
 
     def handle_orders(self, orders: list, clear=False):
 
