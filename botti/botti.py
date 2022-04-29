@@ -170,33 +170,38 @@ class Botti:
 
         return (0, False)
 
-    def bid_ask_delta(self, side: str = 'bids', delta: float = 1.01) -> bool:
-
+    def bid_ask_delta(self, side: str = 'bids', delta: float = 1.01) -> tuple:
         entry_side = self.order_book.get('bids') if side == 'bids' else self.order_book.get('asks')
         exit_side = self.order_book.get('asks') if side == 'bids' else self.order_book.get('bids')
-        return np.sum(entry_side) / np.sum(exit_side) > delta
+
+        entry = np.sum(entry_side)
+        exit = np.sum(exit_side)
+
+        return (entry / exit, entry / exit > delta)
 
     def trailing_entry(self) -> bool:
 
         if 'closed' not in self.cache.position.status:
             return False
 
-        if not self.cache.last.id:
+        delta, ok = self.bid_ask_delta('bids')
+
+        if not self.cache.last.id and ok:
             logger.info(
-                '{id} trailing entry - no trades found'.format(id=self.okx.id))
-            return True and self.bid_ask_delta('bids')
+                '{id} trailing entry - no trades found - {delta}'.format(id=self.okx.id, delta=delta))
+            return True
 
         # upper limit
-        if self.p_t > (self.cache.last.close_avg * 1.01):
-            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * 1.01))
-            return True and self.bid_ask_delta('bids')
+        if (self.p_t > (self.cache.last.close_avg * 1.01) and ok):
+            logger.info('{id} trailing entry - no trades found - upper limit hit {limit} {delta}'.format(
+                id=self.okx.id, limit=self.cache.last.close_avg * 1.01, delta=delta))
+            return True
 
         # lower limit
-        if self.p_t < (self.cache.last.close_avg * 0.99):
-            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * 0.99))
-            return True and self.bid_ask_delta('bids')
+        if (self.p_t < (self.cache.last.close_avg * 0.99)) and ok:
+            logger.info('{id} trailing entry - no trades found - lower limit hit {limit} {delta}'.format(
+                id=self.okx.id, limit=self.cache.last.close_avg * 0.99, delta=delta))
+            return True 
 
         return False
 
