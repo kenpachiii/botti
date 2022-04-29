@@ -373,10 +373,6 @@ class Botti:
                 for trade in trades:
                     self.p_t = trade.get('price')
 
-                    if self.early_exit():
-                        await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
-                        logger.info('{id} early exit hit'.format(id=self.okx.id))
-
                     # break even
                     price, ok = self.break_even()
                     if ok:
