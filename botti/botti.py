@@ -197,6 +197,14 @@ class Botti:
     def take_profits(self):
         return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.01
 
+    def early_exit(self):
+
+        position = self.cache.position
+
+        pnl = (((self.p_t - position.open_avg) / position.open_avg) * 100) * self.leverage
+
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and pnl < -0.5
+
     def handle_orders(self, orders: list, clear=False):
 
         for order in orders:
@@ -273,6 +281,9 @@ class Botti:
 
                     if position.pnl(self.leverage) > 0:
                         send_sms('profits', 'position closed\n\n+{:.2f}%'.format(position.pnl(self.leverage)))
+
+                    if position.pnl(self.leverage) < 0:
+                        send_sms('earlyexit', 'position closed\n\n+{:.2f}%'.format(position.pnl(self.leverage)))
 
             logger.info('{exchange_id} update position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status} {pnl}'.format(
                 exchange_id=self.okx.id, pnl=position.pnl(self.leverage) if position.open_amount == 0 else '', **vars(position)))
@@ -363,6 +374,10 @@ class Botti:
 
                 for trade in trades:
                     self.p_t = trade.get('price')
+
+                    if self.early_exit():
+                        await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
+                        logger.info('{id} early exit hit'.format(id=self.okx.id))
 
                     # break even
                     price, ok = self.break_even()
