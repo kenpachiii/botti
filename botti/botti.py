@@ -106,9 +106,10 @@ class Botti:
         except Exception as e:
             self.log_exception(e)
 
-    def market_depth(self, side: str, price: float, size: float) -> float:
+    # TODO: does having a limit help prevent early exits...? 
+    def market_depth(self, side: str, price: float, size: float, limit: float = 10) -> float:
 
-        orders = np.asarray(self.order_book.get(side))
+        orders = np.asarray(self.order_book.get(side))[:limit]
 
         # bid window = best bid > price > worst bid
         if 'bids' in side and not (orders[0][0] > price > orders[-1][0]):
@@ -170,12 +171,12 @@ class Botti:
 
         return (0, False)
 
-    def bid_ask_delta(self, side: str = 'bids', delta: float = 1.01) -> tuple:
+    def bid_ask_delta(self, side: str = 'bids', delta: float = 1, limit: float = 100) -> tuple:
         entry_side = self.order_book.get('bids') if side == 'bids' else self.order_book.get('asks')
         exit_side = self.order_book.get('asks') if side == 'bids' else self.order_book.get('bids')
 
-        entry = np.sum(entry_side)
-        exit = np.sum(exit_side)
+        entry = np.sum(entry_side[:limit])
+        exit = np.sum(exit_side[:limit])
 
         return (entry / exit, entry / exit > delta)
 
@@ -411,7 +412,7 @@ class Botti:
 
         try:
             while True:
-                self.order_book = await self.okx.watch_order_book(self.symbol, limit=10)
+                self.order_book = await self.okx.watch_order_book(self.symbol)                    
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
