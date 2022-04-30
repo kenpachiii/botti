@@ -15,6 +15,7 @@ from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
 
+
 class Botti:
 
     @classmethod
@@ -31,9 +32,6 @@ class Botti:
         self.symbol: str = kwargs.get('symbol')
         self.fee: float = kwargs.get('fee')
         self.leverage: int = kwargs.get('leverage')
-        self.upper_limit: int = kwargs.get('upper_limit')
-        self.lower_limit: int = kwargs.get('lower_limit')
-        self.tp: int = kwargs.get('tp')
 
         self.p_t = 0
         self.cache: Cache = Cache()
@@ -195,21 +193,21 @@ class Botti:
             return True
 
         # upper limit
-        if (self.p_t > (self.cache.last.close_avg * self.upper_limit) and ok):
+        if (self.p_t > (self.cache.last.close_avg * 1.01) and ok):
             logger.info('{id} trailing entry - no trades found - upper limit hit {limit} {delta}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * self.upper_limit, delta=delta))
+                id=self.okx.id, limit=self.cache.last.close_avg * 1.01, delta=delta))
             return True
 
         # lower limit
-        if (self.p_t < (self.cache.last.close_avg * self.lower_limit)) and ok:
+        if (self.p_t < (self.cache.last.close_avg * 0.99)) and ok:
             logger.info('{id} trailing entry - no trades found - lower limit hit {limit} {delta}'.format(
-                id=self.okx.id, limit=self.cache.last.close_avg * self.lower_limit, delta=delta))
+                id=self.okx.id, limit=self.cache.last.close_avg * 0.99, delta=delta))
             return True 
 
         return False
 
     def take_profits(self):
-        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * self.tp
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * 1.01
 
     def handle_orders(self, orders: list, clear=False):
 
