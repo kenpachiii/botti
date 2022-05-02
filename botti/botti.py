@@ -162,12 +162,14 @@ class Botti:
         if ceil(self.p_t) < ceil(bid) and position.triggered == 1:
             position.update({'triggered': 0})
             self.cache.update(position)
+            logger.info('{exchange_id} failed to break even {_symbol} {p_t} < {break_even}'.format(
+                exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
 
         if position.triggered == 0:
             return (0, False)
 
         if ceil(self.p_t) == ceil(bid):
-            logger.info('{exchange_id} breaking even {_id} {_symbol} {p_t} == {break_even}'.format(
+            logger.info('{exchange_id} breaking even {_symbol} {p_t} == {break_even}'.format(
                 exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
             return (break_even_price, True)
 
