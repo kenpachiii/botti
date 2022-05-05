@@ -15,7 +15,7 @@ class Position:
     def __init__(self, object: dict = {}) -> None:
 
         self._id: str = object.get('id')
-        self._timestamp: str = object.get('timestamp')
+        self._timestamp: int = object.get('timestamp') or 0
         self._symbol: str = object.get('symbol')
         self._side: str = object.get('side')
         self._open_amount: float = object.get('open_amount') or 0

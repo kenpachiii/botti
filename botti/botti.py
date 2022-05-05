@@ -334,6 +334,7 @@ class Botti:
         # dump cache to be inspected 
         self.dump()
 
+    # TODO: something more fault tolerant
     async def check_open_position(self):
 
         logger.info('{id} checking for open positions'.format(id=self.okx.id))
@@ -352,6 +353,7 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
+    # TODO: something more fault tolerant
     async def orders_history(self):
 
         logger.info('{id} re-syncing orders'.format(id=self.okx.id))
@@ -359,12 +361,11 @@ class Botti:
         response: dict = {}
         try:
             # getting orders this way may not get cached by ccxtpro
-            response = await self.okx.private_get_trade_orders_history({'instId': self.okx.market_id(self.symbol), 'instType': 'SWAP', 'limit': 100})
+            response = await self.okx.private_get_trade_orders_history({ 'instId': self.okx.market_id(self.symbol), 'instType': 'SWAP', 'limit': 100 })
 
             if response:
                 # add 1 so since conditional ignores most recent entry
-                orders = self.okx.parse_orders(response.get(
-                    'data'), since=self.cache.position.timestamp + 1)
+                orders = self.okx.parse_orders(response.get('data'), since=self.cache.position.timestamp + 1)
                 self.handle_orders(orders)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -387,7 +388,7 @@ class Botti:
                     # trailing entry # TODO: add / cancel limit orders maybe?
                     if self.cache.position.status not in [PositionStatus.OPEN, PositionStatus.PENDING] and self.trailing_entry():
 
-                        size = await self.position_size('long') * 0.1
+                        size = await self.position_size('long') 
                         if size == 0:
                             logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
                             continue

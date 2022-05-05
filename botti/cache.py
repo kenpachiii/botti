@@ -1,7 +1,8 @@
 import sqlite3
 import logging
-import time
+
 from botti.position import Position
+from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class Cache:
             self.con.commit()
         except Exception as e:
             logger.error('inti - {error}'.format(error=e))
+            send_sms('exception', 'inti - {error}'.format(error=e))
 
     def insert(self, position: Position) -> None:
 
@@ -35,6 +37,7 @@ class Cache:
             self.con.commit()
         except Exception as e:
             logger.error('insert - {error}'.format(error=e))
+            send_sms('exception', 'insert - {error}'.format(error=e))
 
     def update(self, position: Position) -> None:
 
@@ -46,19 +49,22 @@ class Cache:
             self.con.commit()
         except Exception as e:
             logger.error('update - {error}'.format(error=e))
+            send_sms('exception', 'update - {error}'.format(error=e))
 
     def clear(self) -> None:
         try:
             self.cur.execute('''DELETE from position;''')
             self.con.commit()
         except Exception as e:
-            logger.error('delete - {error}'.format(error=e))
+            logger.error('clear - {error}'.format(error=e))
+            send_sms('exception', 'clear - {error}'.format(error=e))
 
     def __del__(self) -> None:
         try:
             self.close()
         except Exception as e:
             logger.error('{error}'.format(error=e))
+            send_sms('exception', '__del__ - {error}'.format(error=e))
 
     # TODO: Close all orders that were left open...?
     def close(self) -> None:
@@ -67,6 +73,7 @@ class Cache:
             self.con.close()
         except Exception as e:
             logger.error('close - {error}'.format(error=e))
+            send_sms('exception', 'close - {error}'.format(error=e))
 
         logger.info('flushed and closed sqlite connection')
 
