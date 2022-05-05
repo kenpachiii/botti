@@ -2,6 +2,7 @@ import logging
 
 from botti.loggers import setup_logging_pre
 from botti.botti import Botti
+from botti.position import PositionStatus
 
 api_keys = {
     'main': {
@@ -11,8 +12,8 @@ api_keys = {
         'test': False
     },
     'botti-api': {
-        'key': '34dc5ac4-b78b-4dfa-b0ca-3a69e7cedd07',
-        'secret': 'DECA9E6C4CDA7D8C8C97AF5A148FAEEC',
+        'key': 'f9711760-11d2-47f6-953b-4f397e266f61',
+        'secret': '25104E01925A5C433513ADC717B88C58',
         'password': 'KQMlR1m+g85tJMD2',
         'test': False
     },
@@ -22,12 +23,6 @@ api_keys = {
         'password': 'v5pksFMxT7G2uwFy',
         'test': True
     },
-    'botti-demo': {
-        'key': 'd02f824a-f938-4306-865e-19e3d07b0499',
-        'secret': 'C3F9094A6B0912F4F02813DD319403DD',
-        'password': '/Bw0fC5iVyHs9FNr',
-        'test': True
-    }
 }
 
 logger = logging.getLogger('botti')
@@ -38,3 +33,9 @@ def main():
 
     botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 3, upper_limit = 1.005, lower_limit = 0.995, tp = 1.005, **api_keys['botti-api'])
     botti.run()
+
+
+
+
+
+

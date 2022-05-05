@@ -20,7 +20,7 @@ class Cache:
 
     def init(self) -> None:
         try:
-            self.cur.execute('''CREATE TABLE if not exists position (id TEXT DEFAULT NULL, timestamp INTEGER DEFAULT 0, symbol TEXT DEFAULT NULL, side TEXT, open_amount REAL DEFAULT 0, open_avg REAL DEFAULT 0, close_amount REAL DEFAULT 0, close_avg REAL DEFAULT 0, status TEXT DEFAULT 1, triggered INTEGER DEFAULT 0);''')
+            self.cur.execute('''CREATE TABLE if not exists position (id TEXT DEFAULT NULL, timestamp INTEGER DEFAULT 0, symbol TEXT DEFAULT NULL, side TEXT, open_amount REAL DEFAULT 0, open_avg REAL DEFAULT 0, close_amount REAL DEFAULT 0, close_avg REAL DEFAULT 0, status INTEGER, triggered INTEGER DEFAULT 0);''')
             self.con.commit()
         except Exception as e:
             logger.error('inti - {error}'.format(error=e))
@@ -29,7 +29,7 @@ class Cache:
 
         try:
 
-            args = (position.id, position.timestamp, position.symbol, position.side, position.open_amount, position.open_avg, position.close_amount, position.close_avg, position.status, position.triggered)
+            args = (position.id, position.timestamp, position.symbol, position.side, position.open_amount, position.open_avg, position.close_amount, position.close_avg, position.status.value, position.triggered)
 
             self.cur.execute('''INSERT INTO position VALUES (?,?,?,?,?,?,?,?,?,?);''', args)
             self.con.commit()
@@ -40,7 +40,7 @@ class Cache:
 
         try:
 
-            args = (position.timestamp, position.symbol, position.side, position.open_amount, position.open_avg, position.close_amount, position.close_avg, position.status, position.triggered, position.id)
+            args = (position.timestamp, position.symbol, position.side, position.open_amount, position.open_avg, position.close_amount, position.close_avg, position.status.value, position.triggered, position.id)
 
             self.cur.execute('''UPDATE position set timestamp = ?, symbol = ?, side = ?, open_amount = ?, open_avg = ?, close_amount = ?, close_avg = ?, status = ?, triggered = ? WHERE id = ?;''', args)
             self.con.commit()
@@ -82,7 +82,7 @@ class Cache:
     # returns currently opened trade if any
     def position(self) -> Position:
         try: 
-            values = self.cur.execute('''SELECT * FROM position WHERE status = 'open' OR status = 'pending';''').fetchone()
+            values = self.cur.execute('''SELECT * FROM position WHERE status = 1 OR status = 0;''').fetchone()
             return Position({k: values[k] for k in values.keys()}) if values else Position({})
         except Exception as e:
             logger.error('position - {error}'.format(error=e))
@@ -91,22 +91,31 @@ class Cache:
     # returns last open trade excluding currectly open trade if any
     def last(self) -> Position:
         try: 
-            values = self.cur.execute('''SELECT * FROM position WHERE status = 'closed' ORDER BY timestamp DESC;''').fetchone()
+            values = self.cur.execute('''SELECT * FROM position WHERE status = 2 ORDER BY timestamp DESC;''').fetchone()
             return Position({k: values[k] for k in values.keys()}) if values else Position({})
         except Exception as e:
             logger.error('position - {error}'.format(error=e))
 
+
+# self.cache.insert(Position({
+#     'id': os.urandom(6).hex(),
+#     'timestamp': order.get('timestamp'),
+#     'symbol': order.get('symbol'),
+#     'side': order.get('side'),
+#     'open_amount': order.get('filled') if order.get('status') == 'closed' else 0.0,
+#     'open_avg': order.get('average') if order.get('status') == 'closed' else 0.0,
+#     'close_amount': 0.0,
+#     'close_avg': 0.0,
+#     'status': 'open' if order.get('status') == 'closed' else 'pending',
+#     'triggered': 0
+# }))
+
 # cache = Cache()
-
-# position = Position({ 'id': '2f6f0bf63798', 'timestamp': 1649558505, 'symbol': 'BTC/USDT:USDT', 'side': 'buy', 'open_amount': 30.0, 'open_avg': 42735.7, 'close_amount': 0, 'close_avg': 0, 'status': 'pending', 'triggered': 0 })
-
+# position = Position({ 'id': '1', 'timestamp': 1649558505, 'symbol': 'BTC/USDT:USDT', 'side': 'buy', 'open_amount': 0, 'open_avg': 0, 'close_amount': 0, 'close_avg': 0, 'status': 'pending', 'triggered': 0 })
 # cache.insert(position)
 
-# position.update({ 'triggered': 1, 'status': 'open' })
-
-# cache.update(position)
-
-# print(vars(cache.position))
+# position = Position({ 'id': '2', 'timestamp': 1649558505, 'symbol': 'BTC/USDT:USDT', 'side': 'buy', 'open_amount': 0, 'open_avg': 0, 'close_amount': 0, 'close_avg': 0, 'status': 'pending', 'triggered': 0 })
+# cache.insert(position)
 
 # cache.all()
 

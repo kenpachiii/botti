@@ -1,4 +1,7 @@
+
+
 from math import ceil, floor
+from random import randrange
 import ccxtpro
 import logging
 import numpy as np
@@ -8,11 +11,11 @@ import os
 import traceback
 import datetime
 
-from enum import Enum
+import pandas as pd
 
 from botti.exchange import Exchange
 from botti.cache import Cache
-from botti.position import Position, PositionStatus
+from botti.position import Position
 from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
@@ -37,9 +40,9 @@ class Botti:
         self.lower_limit: int = kwargs.get('lower_limit')
         self.tp: int = kwargs.get('tp')
 
-        self.p_t: float = 0
-        self.cursor: float = 0
+        self.p_t = 0
         self.cache: Cache = Cache()
+        self.order_book: dict = {}
 
         self.okx: Exchange = ccxtpro.okx
 
@@ -109,30 +112,30 @@ class Botti:
 
         except Exception as e:
             self.log_exception(e)
- 
-    def market_depth(self, side: str, price: float, size: float, limit: float = 100) -> float:
 
-        orders = np.asarray(self.okx.orderbooks[self.symbol].get(side))[:limit]
+    # TODO: does having a limit help prevent early exits...? 
+    def market_depth(self, side: str, price: float, size: float, limit: float = 10) -> float:
+
+        orders = np.asarray(self.order_book.get(side))[:limit]
 
         # bid window = best bid > price > worst bid
-        if 'bids' in side and not (orders[0][0] >= price >= orders[-1][0]):
+        if 'bids' in side and not (orders[0][0] > price > orders[-1][0]):
             return price
 
         # ask window = best ask < price < worst ask
-        if 'asks' in side and not (orders[0][0] <= price <= orders[-1][0]):
+        if 'asks' in side and not (orders[0][0] < price < orders[-1][0]):
             return price
 
         index_arr: np.ndarray
         if 'bids' in side:
             # find index where price < orders price
-            index_arr = np.argwhere(price <= orders[:, 0])
+            index_arr = np.argwhere(price < orders[:, 0])
 
         if 'asks' in side:
             # find index where price > orders price
-            index_arr = np.argwhere(price >= orders[:, 0])
+            index_arr = np.argwhere(price > orders[:, 0])
 
         if index_arr.size > 0:
-
             # create orders slice and reverse
             orders = orders[:index_arr[-1][0]+1][::-1]
 
@@ -148,70 +151,79 @@ class Botti:
 
         position: Position = self.cache.position
 
-        if position.status is not PositionStatus.OPEN:
+        if not self.order_book or 'open' not in position.status:
             return (0, False)
 
         break_even_price = position.open_avg * (1 + self.fee)**2
 
-        if self.p_t > break_even_price and position.triggered == 0:
-            position.update({ 'triggered': 1 })
+        # returns break_even_price or an adjusted break_even_price
+        bid = self.market_depth('bids', break_even_price,
+                                self.cache.position.open_amount)
+
+        if ceil(self.p_t) > ceil(bid) and position.triggered == 0:
+            position.update({'triggered': 1})
             self.cache.update(position)
 
-        if self.p_t < break_even_price and position.triggered == 1:
-            position.update({ 'triggered': 0 })
+        if ceil(self.p_t) < ceil(bid) and position.triggered == 1:
+            position.update({'triggered': 0})
             self.cache.update(position)
             logger.info('{exchange_id} failed to break even {_symbol} {p_t} < {break_even}'.format(
-                exchange_id=self.okx.id, **vars(position), p_t=self.p_t, break_even=break_even_price))
+                exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
 
         if position.triggered == 0:
             return (0, False)
 
-        bid = self.market_depth('bids', break_even_price, self.cache.position.open_amount)
-        if (self.p_t - bid) < 1:
-            logger.info('{exchange_id} breaking even {_symbol} {p_t} - {bid} < 1'.format(
-                exchange_id=self.okx.id, **vars(position), p_t=self.p_t, bid=bid))
+        if ceil(self.p_t) == ceil(bid):
+            logger.info('{exchange_id} breaking even {_symbol} {p_t} == {break_even}'.format(
+                exchange_id=self.okx.id, **vars(position), p_t=ceil(self.p_t), break_even=ceil(bid)))
             return (break_even_price, True)
 
         return (0, False)
- 
+
+    def bid_ask_delta(self, side: str = 'bids', delta: float = 1, limit: float = 100) -> tuple:
+        entry_side = self.order_book.get('bids') if side == 'bids' else self.order_book.get('asks')
+        exit_side = self.order_book.get('asks') if side == 'bids' else self.order_book.get('bids')
+
+        entry = np.sum(entry_side[:limit])
+        exit = np.sum(exit_side[:limit])
+
+        return (entry / exit, entry / exit > delta)
+
     def trailing_entry(self) -> bool:
 
-        if not self.cache.last.id:
+        if 'closed' not in self.cache.position.status:
+            return False
+
+        delta, ok = self.bid_ask_delta('bids')
+
+        if not self.cache.last.id and ok:
             logger.info(
-                '{id} trailing entry - no trades found'.format(id=self.okx.id))
+                '{id} trailing entry - no trades found - {delta}'.format(id=self.okx.id, delta=delta))
             return True
 
-        delta = self.cursor if self.cursor > 0 else self.cache.last.close_avg
-
         # upper limit
-        if (self.p_t > (delta * self.upper_limit)):
-
-            self.cursor = 0
-
-            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(
-                id=self.okx.id, limit=delta * self.upper_limit))
+        if (self.p_t > (self.cache.last.close_avg * self.upper_limit) and ok):
+            logger.info('{id} trailing entry - no trades found - upper limit hit {limit} {delta}'.format(
+                id=self.okx.id, limit=self.cache.last.close_avg * self.upper_limit, delta=delta))
             return True
 
         # lower limit
-        if (self.p_t < (delta * self.lower_limit)):
-
-            self.cursor = delta * self.lower_limit
-
-            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cursor))
-            return False
+        if (self.p_t < (self.cache.last.close_avg * self.lower_limit)) and ok:
+            logger.info('{id} trailing entry - no trades found - lower limit hit {limit} {delta}'.format(
+                id=self.okx.id, limit=self.cache.last.close_avg * self.lower_limit, delta=delta))
+            return True 
 
         return False
 
     def take_profits(self):
-        return self.p_t > self.cache.position.open_avg * self.tp
+        return 'open' in self.cache.position.status and self.cache.position.open_amount > 0 and self.p_t > self.cache.position.open_avg * self.tp
 
     def handle_orders(self, orders: list, clear=False):
 
         for order in orders:
             if order.get('status') in ['canceled', 'expired', 'rejected']:
 
-                if self.cache.position.status is PositionStatus.PENDING and clear:
+                if self.cache.position.get('status') == 'pending' and clear:
                     self.cache.clear()
 
                 logger.info('{exchange_id} recent order {status}'.format(
@@ -229,8 +241,7 @@ class Botti:
 
     def add_position(self, order: dict) -> None:
         try:
-
-            position = Position({
+            self.cache.insert(Position({
                 'id': os.urandom(6).hex(),
                 'timestamp': order.get('timestamp'),
                 'symbol': order.get('symbol'),
@@ -239,13 +250,11 @@ class Botti:
                 'open_avg': order.get('average') if order.get('status') == 'closed' else 0.0,
                 'close_amount': 0.0,
                 'close_avg': 0.0,
-                'status': PositionStatus.OPEN if order.get('status') == 'closed' else PositionStatus.PENDING,
+                'status': 'open' if order.get('status') == 'closed' else 'pending',
                 'triggered': 0
-            })
-
-            self.cache.insert(position)
+            }))
             logger.info('{exchange_id} add position - {_id} {_symbol} {_timestamp} {_open_avg} {_open_amount} {_close_avg} {_close_amount} {_status}'.format(
-                exchange_id=self.okx.id, **vars(position)))
+                exchange_id=self.okx.id, **vars(self.cache.position)))
         except Exception as e:
             self.log_exception(e)
 
@@ -267,8 +276,8 @@ class Botti:
                     position.update(
                         {'open_amount': position.open_amount + order.get('filled'), 'open_avg': avg})
 
-                    if position.status is PositionStatus.PENDING:
-                        position.update({'status': PositionStatus.OPEN})
+                    if position.status == 'pending':
+                        position.update({'status': 'open'})
 
             if type == 'reduce':
 
@@ -281,7 +290,7 @@ class Botti:
                         {'close_amount': position.close_amount + order.get('filled'), 'close_avg': avg})
 
                 if position.open_amount == 0:
-                    position.update({'status': PositionStatus.CLOSED})
+                    position.update({'status': 'closed'})
 
                     if position.pnl(self.leverage) > 0:
                         send_sms('profits', 'position closed\n\n+{:.2f}%'.format(position.pnl(self.leverage)))
@@ -372,36 +381,97 @@ class Botti:
 
     async def watch_trades(self):
 
+        bids = pd.Index([])
+        asks = pd.Index([])
+
+        entry_price = 0
+        id = ''
+        o = 0
+        size = randrange(100000, 200000)
+
         try:
             while True:
                 trades: list[dict] = await self.okx.watch_trades(self.symbol)
 
                 for trade in trades:
+
                     self.p_t = trade.get('price')
+                    amount = trade.get('amount') 
+                    side = trade.get('side') # buy means asks are being filled / sell bids
 
-                    # break even
-                    price, ok = self.break_even()
-                    if self.cache.position.status is PositionStatus.OPEN and ok:
-                        await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
+                    best_bid = self.okx.orderbooks.get(self.symbol).get('bids')
+                    best_ask = self.okx.orderbooks.get(self.symbol).get('asks')
 
-                    # trailing entry # TODO: add / cancel limit orders maybe?
-                    if self.cache.position.status not in [PositionStatus.OPEN, PositionStatus.PENDING] and self.trailing_entry():
+                    try:
 
-                        size = await self.position_size('long') * 0.1
-                        if size == 0:
-                            logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
-                            continue
+                        BLUE = '\033[96m'
+                        GREEN = '\033[92m'
+                        RED = '\033[91m'
+                        END = '\033[0m'
 
-                        await self.create_order('fok', 'buy', size, self.okx.orderbooks[self.symbol].get('asks')[0][0], params={'tdMode': 'cross', 'posSide': 'long'})
+                        price = str(self.p_t)
+                        if 'buy' in side:
+                            price = GREEN + price + END
+                        else:
+                            price = RED + price + END
 
-                    # take profits
-                    if self.cache.position.status is PositionStatus.OPEN and self.take_profits():
-                        await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
-                        logger.info('{id} take profits - target hit'.format(id=self.okx.id))
+                        bid = str(best_bid[0][0])
+                        if best_bid[0][0] == entry_price:
+                            bid = BLUE + bid + END
+
+                        print(best_ask[4][0], best_ask[3][0], best_ask[2][0], best_ask[1][0], best_ask[0][0], price, bid, best_bid[1][0], best_bid[2][0], best_bid[3][0], best_bid[4][0], best_ask[0][0] >= self.p_t >= best_bid[0][0], (best_ask[0][0] + best_bid[0][0]) / 2)
+
+                       
+                    #    bids = bids.union(pd.Index(list(np.asarray(self.order_book.get('bids'))[:, 0])))
+                    #    asks = asks.union(pd.Index(list(np.asarray(self.order_book.get('asks'))[:, 0])))
+
+                    #    print(bids.intersection(asks))
+    
+                        if best_bid[0][0] != entry_price:
+
+                            entry_price = (best_ask[0][0] + best_bid[0][0]) / 2
+
+                            if id:
+                                response = await self.okx.fetch_order(id, self.symbol)
+                                if response.get('filled') == 0:
+                                    await self.okx.cancel_order(id, self.symbol)
+                                    size = randrange(100000, 200000)
+                                else:
+                                    continue
+
+                            response = await self.okx.create_order(self.symbol, 'limit', 'buy', size, entry_price, params={ 'timeInForce': 'PostOnly' })
+                            response = await self.okx.fetch_order(response.get('id'), self.symbol)
+                            if response.get('status') == 'open':
+                                id = response.get('id')
+        
+                    except Exception as e:
+                        print(e)
+                        pass
+
+                    # # break even
+                    # price, ok = self.break_even()
+                    # if ok:
+                    #     await self.create_order('fok', 'sell', self.cache.position.open_amount, price, params={'tdMode': 'cross', 'posSide': 'long'})
+
+                    # # trailing entry
+                    # if self.trailing_entry():
+
+                    #     size = await self.position_size('long')
+                    #     if size == 0:
+                    #         logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
+                    #         continue
+
+                    #     await self.create_order('fok', 'buy', size, self.p_t, params={'tdMode': 'cross', 'posSide': 'long'})
+
+                    # # take profits
+                    # if self.take_profits():
+                    #     await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
+                    #     logger.info('{id} take profits - target hit'.format(id=self.okx.id))
 
                 self.okx.trades[self.symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            print(e)
             self.log_exception(e)
 
             # make sure run recieves the error to retry
@@ -412,7 +482,7 @@ class Botti:
 
         try:
             while True:
-                await self.okx.watch_order_book(self.symbol)               
+                self.order_book = await self.okx.watch_order_book(self.symbol)                    
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
@@ -435,35 +505,11 @@ class Botti:
                 raise ccxtpro.NetworkError(e)
 
     async def system_status(self):
-
-        class State(Enum):
-            SCHEDULED = 'scheduled'
-            ONGOING = 'ongoing'
-            COMPLETED = 'completed'
-            CANCELED = 'canceled'
-
-        class ServiceType(Enum):
-            WEBSOCKET = '0'
-            SPOTMARGIN = '1'
-            FUTURES = '2'
-            PERPETUAL = '3'
-            OPTIONS = '4'
-            TRADING = '5'
-        
         try:
             response: dict = await self.okx.public_get_system_status()
             for status in response.get('data'):
-
-                title = status.get('title')
-                start = self.okx.iso8601(int(status.get('begin')))
-                end = self.okx.iso8601(int(status.get('end')))
-                state = State(status.get('state')).name
-                service = ServiceType(status.get('serviceType')).name
-
-                logger.warning(f'system status - {title} {start} {end} {state} {service}')
-
-                send_sms('system-status', f'system status\n{title}\n{start}\n{end}\n{state}\n{service}')
-
+                print(self.okx.iso8601(int(status.get('begin'))), self.okx.iso8601(int(status.get('end'))), status.get(
+                    'serviceType'), status.get('state'), status.get('system'), status.get('title'))
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
@@ -483,10 +529,10 @@ class Botti:
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': { 'watchOrderBook': { 'depth': 'books' }}
+                # 'options': { 'watchOrderBook': { 'depth': 'books' }}
             })
 
-            self.loop.run_until_complete(self.system_status())
+            # self.loop.run_until_complete(self.system_status())
 
             self.okx.set_sandbox_mode(self.test)
 
@@ -495,9 +541,9 @@ class Botti:
             self.loop.run_until_complete(self.okx.set_leverage(self.leverage, self.symbol, params={'mgnMode': 'cross'}))
 
             # required to repopulate an already opened position
-            self.loop.run_until_complete(self.check_open_position())
+            # self.loop.run_until_complete(self.check_open_position())
             loops = [
-                self.watch_orders(),
+                # self.watch_orders(),
                 self.watch_order_book(),
                 self.watch_trades()
             ]

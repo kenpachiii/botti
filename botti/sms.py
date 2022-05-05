@@ -27,7 +27,7 @@ def send_sms(type: str, msg: str) -> None:
             server.login('botti.notification@gmail.com', 'yygakfowwmpogiuy')
             
             recipients = None
-            if type == 'exception' or type == 'earlyexit':
+            if type == 'exception' or type == 'earlyexit' or type == 'system-status':
                 recipients = ['9286323030@vtext.com']
 
             if type == 'profits':
