@@ -74,6 +74,7 @@ class Botti:
                 frame = s
 
         if type(e).__name__ == 'NetworkError':
+            logger.warning('{id} - {file} - {f} - {error}'.format(id=self.okx.id, file=frame.filename, f=frame.name, error=e))
             return
 
         # TODO: InvalidOrder typically gets thrown when multiple orders go through when only one is needed
