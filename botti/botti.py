@@ -170,6 +170,9 @@ class Botti:
             return (0, False)
 
         bid = self.market_depth('bids', break_even_price, self.cache.position.open_amount)
+
+        # last > break even > entry
+
         if (self.p_t - bid) < 1:
             logger.info('{exchange_id} breaking even {_symbol} {p_t} - {bid} < 1'.format(
                 exchange_id=self.okx.id, **vars(position), p_t=self.p_t, bid=bid))
@@ -399,9 +402,6 @@ class Botti:
                     if self.cache.position.status is PositionStatus.OPEN and self.take_profits():
                         await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
                         logger.info('{id} take profits - target hit'.format(id=self.okx.id))
-
-                    # TODO: remove later
-                    self.dump()
 
                 self.okx.trades[self.symbol].clear()
 
