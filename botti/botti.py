@@ -93,19 +93,20 @@ class Botti:
             if not os.path.exists(path):
                 os.mkdir(path)
 
-            timestamp = datetime.datetime.now().isoformat()
+            while True:
+                timestamp = datetime.datetime.now().isoformat()
 
-            filename = 'order_book-' + timestamp
-            with open(os.path.join(path, filename), 'w') as json_file:
-                json.dump(self.okx.orderbooks, json_file,
-                        indent=4,
-                        separators=(',', ': '))
+                filename = 'order_book-' + timestamp
+                with open(os.path.join(path, filename), 'w') as json_file:
+                    json.dump(self.okx.orderbooks, json_file,
+                            indent=4,
+                            separators=(',', ': '))
 
-            filename = 'trades-' + timestamp
-            with open(os.path.join(path, filename), 'w') as json_file:
-                json.dump(self.okx.trades, json_file,
-                        indent=4,
-                        separators=(',', ': '))
+                filename = 'trades-' + timestamp
+                with open(os.path.join(path, filename), 'w') as json_file:
+                    json.dump(self.okx.trades, json_file,
+                            indent=4,
+                            separators=(',', ': '))
 
         except Exception as e:
             self.log_exception(e)
@@ -331,9 +332,6 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
-        # dump cache to be inspected 
-        self.dump()
-
     # TODO: something more fault tolerant
     async def check_open_position(self):
 
@@ -413,7 +411,7 @@ class Botti:
 
         try:
             while True:
-                await self.okx.watch_order_book(self.symbol)               
+                await self.okx.watch_order_book(self.symbol, limit=20)               
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             self.log_exception(e)
 
