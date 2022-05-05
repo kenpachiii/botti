@@ -400,6 +400,9 @@ class Botti:
                         await self.create_order('market', 'sell', self.cache.position.open_amount, None, params={'tdMode': 'cross', 'posSide': 'long'})
                         logger.info('{id} take profits - target hit'.format(id=self.okx.id))
 
+                    # TODO: remove later
+                    self.dump()
+
                 self.okx.trades[self.symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
