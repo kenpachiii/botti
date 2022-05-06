@@ -1,6 +1,6 @@
 import logging
 
-from botti.loggers import setup_logging_pre
+from botti.loggers import setup_logging
 from botti.botti import Botti
 from botti.position import PositionStatus
 
@@ -29,7 +29,7 @@ logger = logging.getLogger('botti')
 
 def main():
 
-    setup_logging_pre()
+    setup_logging()
 
     botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 3, upper_limit = 1.005, lower_limit = 0.995, tp = 1.005, **api_keys['botti-api'])
     botti.run()
