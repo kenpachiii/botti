@@ -6,7 +6,7 @@ from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
 
-def log_exception(exchange_id, e: Exception) -> None:
+def log_exception(e: Exception, id = None) -> None:
 
     frame = None
 
@@ -18,13 +18,9 @@ def log_exception(exchange_id, e: Exception) -> None:
             frame = s
 
     if type(e).__name__ == 'NetworkError':
+        logger.warning('{id}{file} - {f} - {error}'.format(id = '{} - '.format(id) if id else '', file = frame.filename, f = frame.name, error = e))
+        send_sms('exception', 'network error')
         return
 
-    # TODO: InvalidOrder typically gets thrown when multiple orders go through when only one is needed
-    # figure out a way to prevent multiple orders from happening in the first place instead of this temp fix
-    if type(e).__name__ == 'InvalidOrder':
-        logger.warning('{id} - {file} - {f} - {t}'.format(id=exchange_id, file=frame.filename, f=frame.name, t=type(e).__name__))
-        return
-
-    logger.error('{id} - {file} - {f} - {t}'.format(id=exchange_id, file=frame.filename, f=frame.name, t=type(e).__name__))
-    send_sms('exception', 'origin: {id} {origin}\n\ntype: {t}'.format(id=exchange_id, origin=frame.filename + ' ' + frame.name, t=type(e).__name__))
+    logger.error('{id}{file} - {f} - {t}'.format(id = '{} - '.format(id) if id else '', file = frame.filename, f = frame.name, t = type(e).__name__))
+    send_sms('exception', 'origin: {id}{origin}\n\ntype: {t}'.format(id = '{} '.format(id) if id else '', origin = frame.filename + ' ' + frame.name, t = type(e).__name__))

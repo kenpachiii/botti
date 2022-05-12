@@ -12,8 +12,8 @@ api_keys = {
         'test': False
     },
     'botti-api': {
-        'key': 'f9711760-11d2-47f6-953b-4f397e266f61',
-        'secret': '25104E01925A5C433513ADC717B88C58',
+        'key': 'c2369337-b856-44ef-9cb2-9c7a25a0e421',
+        'secret': '1F0CA58B3DC17B9C0EB963B99DADB112',
         'password': 'KQMlR1m+g85tJMD2',
         'test': False
     },
@@ -31,7 +31,7 @@ def main():
 
     setup_logging()
 
-    botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 3, upper_limit = 1.005, lower_limit = 0.995, tp = 1.005, **api_keys['botti-api'])
+    botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 3, upper_limit = 1.005, lower_limit = 0.995, tp = 1.005, **api_keys['demo'])
     botti.run()
 
 

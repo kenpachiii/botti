@@ -1,14 +1,7 @@
-from enum import Enum
 from decimal import DivisionByZero
 from typing import Any
 
-class PositionStatus(Enum):
-    PENDING = 0
-    OPEN = 1
-    CLOSED = 2
-
-    def __str__(self):
-        return self.name
+from botti.enums import PositionState, PositionStatus
 
 class Position:
 
@@ -19,10 +12,13 @@ class Position:
         self._symbol: str = object.get('symbol')
         self._side: str = object.get('side')
         self._open_amount: float = object.get('open_amount') or 0
+        self._pending_open_amount: float = object.get('pending_open_amount') or 0
         self._open_avg: float = object.get('open_avg') or 0
         self._close_amount: float = object.get('close_amount') or 0
+        self._pending_close_amount: float = object.get('pending_close_amount') or 0
         self._close_avg: float = object.get('close_avg') or 0
         self._status: PositionStatus = object.get('status') 
+        self._state: PositionState = object.get('state')
         self._triggered: bool = object.get('triggered') or 0
 
     @property
@@ -46,6 +42,10 @@ class Position:
         return self._open_amount
 
     @property
+    def pending_open_amount(self) -> float:
+        return self._pending_open_amount
+
+    @property
     def open_avg(self) -> float: 
         return self._open_avg
 
@@ -54,12 +54,20 @@ class Position:
         return self._close_amount
 
     @property
+    def pending_close_amount(self) -> float:
+        return self._pending_close_amount
+
+    @property
     def close_avg(self) -> float: 
         return self._close_avg
 
     @property
     def status(self) -> PositionStatus: 
         return PositionStatus(self._status) if self._status is not None else None
+
+    @property
+    def state(self) -> PositionState: 
+        return PositionState(self._state) if self._state is not None else None
 
     @property
     def triggered(self) -> int: 
@@ -86,5 +94,5 @@ class Position:
         try:
             close = close if close > 0 else self.close_avg
             return (((close - self.open_avg) / self.open_avg) * 100) * leverage
-        except DivisionByZero:
+        except (DivisionByZero, ZeroDivisionError):
             return 0.0

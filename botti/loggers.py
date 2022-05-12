@@ -7,10 +7,9 @@ from logging.handlers import TimedRotatingFileHandler
 logger = logging.getLogger(__name__)
 LOGFORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 
-def _set_loggers() -> None:
+def set_loggers() -> None:
     logging.getLogger('asyncio').setLevel(logging.INFO)
     logging.getLogger('ccxtpro.base.exchange').setLevel(logging.INFO)
-    logging.getLogger('boto3').setLevel(logging.INFO)
 
 def get_existing_handlers(handlertype):
     """
@@ -24,23 +23,18 @@ def setup_logging() -> None:
     if not os.path.exists(path):
         os.mkdir(path)
 
-    consoleHandler = logging.StreamHandler(sys.stdout)
-    consoleHandler.setFormatter(Formatter(LOGFORMAT))
-    logging.root.addHandler(consoleHandler)
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(Formatter(LOGFORMAT))
+    logging.root.addHandler(ch)
 
-
-    handler_rf = get_existing_handlers(TimedRotatingFileHandler)
-    if handler_rf:
-        logging.root.removeHandler(handler_rf)
-
-    handler_rf = TimedRotatingFileHandler('./logs/log',
+    rf = TimedRotatingFileHandler('./logs/log',
                                         when='midnight',  
                                         interval=1,
                                         backupCount=0)
 
-    handler_rf.setFormatter(Formatter(LOGFORMAT))
-    logging.root.addHandler(handler_rf)
+    rf.setFormatter(Formatter(LOGFORMAT))
+    logging.root.addHandler(rf)
 
     logging.root.setLevel(logging.INFO)
-    _set_loggers()
+    set_loggers()
 
