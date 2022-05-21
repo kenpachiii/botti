@@ -1,5 +1,5 @@
 **/*.db
-**/*dump
+**/*data
 .pytest*
 **/__pycache__/
 id_*

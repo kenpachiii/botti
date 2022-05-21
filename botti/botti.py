@@ -3,17 +3,12 @@ import ccxtpro
 import logging
 import numpy as np
 import asyncio
-import aiofiles
-import json
 import os
-import datetime
-import zlib
-import base64
 
 from botti.exceptions import log_exception
 from botti.exchange import Exchange
 from botti.cache import Cache
-from botti.enums import SystemState, ServiceType, PositionStatus, PositionState
+from botti.enums import SystemState, ServiceType, PositionStatus, PositionState, PositionSide
 from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
@@ -32,15 +27,11 @@ class Botti:
         self.test: bool = kwargs.get('test')
 
         self.symbol: str = kwargs.get('symbol')
-        self.fee: float = kwargs.get('fee')
+        self.fee: float = 0.0005
         self.leverage: int = kwargs.get('leverage')
         self.upper_limit: int = kwargs.get('upper_limit')
         self.lower_limit: int = kwargs.get('lower_limit')
-        self.tp: int = kwargs.get('tp')
 
-        self.collect = False
-
-        self.cursor: float = -1 # -1 = needs to be set, 0 = upper limit hit, cursor > 0 = lower limit
         self.cache: Cache = Cache()
 
         self.queue = asyncio.Queue()
@@ -66,133 +57,172 @@ class Botti:
         logger.info('{id} closed loop'.format(id=self.okx.id))
         self.loop.close()
 
-    # FIXME: can this be parallel?
-    async def dump(self):
+    # def market_depth(self, side: str, price: float, size: float, limit: float = 100) -> int:
 
-        order_book_timestamp = 0
-        trade_timestamp = 0
+    #     orders = np.asarray(self.okx.orderbooks[self.symbol].get(side))[:limit]
 
-        try:
+    #     # bid window = best bid > price > worst bid
+    #     if 'bids' in side and not (orders[0][0] >= price >= orders[-1][0]):
+    #         return -1
 
-            while True:
+    #     # ask window = best ask < price < worst ask
+    #     if 'asks' in side and not (orders[0][0] <= price <= orders[-1][0]):
+    #         return -1
 
-                await asyncio.sleep(0)
+    #     index_arr: np.ndarray
+    #     if 'bids' in side:
+    #         # find index where price < orders price
+    #         index_arr = np.argwhere(price <= orders[:, 0])
 
-                if len(self.okx.orderbooks) == 0:
-                    continue
+    #     if 'asks' in side:
+    #         # find index where price > orders price
+    #         index_arr = np.argwhere(price >= orders[:, 0])
 
-                path = os.path.join(os.getcwd(), 'dump')
-                if not os.path.exists(path):
-                    os.mkdir(path)
+    #     depth = -1
+    #     if index_arr.size > 0:
+    #         depth = index_arr[-1][0] 
 
-                timestamp = datetime.datetime.now().isoformat()
-
-                book: dict = self.okx.orderbooks.get(self.symbol)
-      
-                if book.get('timestamp') > order_book_timestamp:
-
-                    filename = 'order_book-' + timestamp
-                    async with aiofiles.open(os.path.join(path, filename), mode='w') as f:
-                        bytes = base64.b64encode(
-                            zlib.compress(
-                                json.dumps(book).encode('utf-8')
-                            )
-                        ).decode('ascii')
-                        await f.write(bytes)
-
-                    order_book_timestamp = book.get('timestamp')
-                    
-                if len(self.okx.trades[self.symbol]) > 0 and self.okx.trades[self.symbol][0].get('timestamp') > trade_timestamp:
-                    filename = 'trades-' + timestamp
-                    async with aiofiles.open(os.path.join(path, filename), mode='w') as f:
-                        bytes = base64.b64encode(
-                            zlib.compress(
-                                json.dumps(self.okx.trades[self.symbol]).encode('utf-8')
-                            )
-                        ).decode('ascii')
-                        await f.write(bytes)
-
-                    trade_timestamp = self.okx.trades[self.symbol][0].get('timestamp')
-
-                self.okx.trades[self.symbol].clear()
-
-        except Exception as e:
-            log_exception(e, self.okx.id)
- 
-    def market_depth(self, side: str, price: float, size: float, limit: float = 100) -> float:
-
-        orders = np.asarray(self.okx.orderbooks[self.symbol].get(side))[:limit]
-
-        # bid window = best bid > price > worst bid
-        if 'bids' in side and not (orders[0][0] >= price >= orders[-1][0]):
-            return price
-
-        # ask window = best ask < price < worst ask
-        if 'asks' in side and not (orders[0][0] <= price <= orders[-1][0]):
-            return price
-
-        index_arr: np.ndarray
-        if 'bids' in side:
-            # find index where price < orders price
-            index_arr = np.argwhere(price <= orders[:, 0])
-
-        if 'asks' in side:
-            # find index where price > orders price
-            index_arr = np.argwhere(price >= orders[:, 0])
-
-        if index_arr.size > 0:
-            orders = orders[:index_arr[-1][0]+1]
-
-        return np.sum(orders[:, 1]) >= size
+    #     return depth
 
     def break_even(self) -> bool:
 
-        break_even_price = self.cache.position.open_avg * (1 + self.fee)**2
-        best_bid = self.okx.orderbooks[self.symbol].get('bids')[0][0]
+        if self.cache.position.side is PositionSide.LONG:
+            break_even_price = self.cache.position.open_avg * (1 + self.fee)**2
+            best_bid = self.okx.orderbooks[self.symbol].get('bids')[0][0]
+            return best_bid > break_even_price
 
-        return best_bid > break_even_price
 
-    def mid_point(self):
-        return (self.okx.orderbooks[self.symbol].get('bids')[0][0] + self.okx.orderbooks[self.symbol].get('asks')[0][0]) / 2
- 
-    def trailing_entry(self) -> bool:
-
-        if self.cache.fetch_order() == {} and self.cursor == -1:
-
-            self.cursor = self.mid_point()
-
-            logger.info(
-                '{id} trailing entry - no previous entries - starting fresh at {entry}'.format(
-                    id=self.okx.id,entry=self.cursor))
-
-            return False
-
-        self.cursor = self.cursor if self.cursor > 0 else self.mid_point()
-
-        # upper limit # FIXME: make smarter
-        if (self.okx.orderbooks[self.symbol].get('asks')[0][0] > (self.cursor * self.upper_limit)):
-
-            logger.info('{id} trailing entry - no trades found - upper limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cursor * self.upper_limit))
-
-            self.cursor = 0
-
-            return True
-
-        # lower limit
-        if (self.okx.orderbooks[self.symbol].get('bids')[0][0] < (self.cursor * self.lower_limit)):
-
-            logger.info('{id} trailing entry - no trades found - lower limit hit {limit}'.format(
-                id=self.okx.id, limit=self.cursor * self.lower_limit))
-
-            self.cursor = self.cursor * self.lower_limit
-
-            return False
+        if self.cache.position.side is PositionSide.SHORT:
+            break_even_price = self.cache.position.open_avg * (1 - self.fee)**2
+            best_ask = self.okx.orderbooks[self.symbol].get('asks')[0][0]
+            return best_ask < break_even_price
 
         return False
 
-    def take_profits(self): 
-        return self.okx.orderbooks[self.symbol].get('bids')[0][0] > self.cache.position.open_avg * self.tp and self.market_depth('bids', self.cache.position.open_avg * (1 + self.fee)**2, self.cache.position.open_amount)
+    def mid_point(self):
+        return (self.okx.orderbooks[self.symbol].get('bids')[0][0] + self.okx.orderbooks[self.symbol].get('asks')[0][0]) / 2
+
+    def trailing_entry(self) -> str:
+
+        fee_spread = ((self.mid_point() * (1 + self.fee)**2) - self.mid_point())
+        ask_delta = self.okx.orderbooks[self.symbol].get('asks')[4][0] - self.okx.orderbooks[self.symbol].get('asks')[0][0]
+        bid_delta = self.okx.orderbooks[self.symbol].get('bids')[0][0] - self.okx.orderbooks[self.symbol].get('bids')[4][0]
+        cum_ask_volume = np.sum(np.asarray(self.okx.orderbooks[self.symbol].get('asks'))[:, 1]) 
+        cum_bid_volume = np.sum(np.asarray(self.okx.orderbooks[self.symbol].get('bids'))[:, 1]) 
+
+        if self.okx.trades.get(self.symbol):
+
+            timestamp = 0
+            buy_amount, sell_amount = 1, 1
+            for trade in self.okx.trades.get(self.symbol)[::-1]:
+                if timestamp == 0:
+                    timestamp = int(trade.get('timestamp'))
+
+                if timestamp != int(trade.get('timestamp')):
+                    break
+
+                if trade.get('side') == 'buy':
+                    buy_amount += float(trade.get('amount'))
+
+                if trade.get('side') == 'sell':
+                    sell_amount += float(trade.get('amount'))
+
+            if ask_delta > fee_spread and bid_delta < fee_spread * 0.2 and buy_amount / cum_ask_volume >= 0.05 and buy_amount / sell_amount >= 2:
+
+                out = (self.okx.orderbooks[self.symbol].get('asks')[0][0], self.okx.orderbooks[self.symbol].get('asks')[4][0], ask_delta, bid_delta, cum_ask_volume / cum_bid_volume, buy_amount / sell_amount)
+
+                logger.info('{id} trailing entry - no trades found - found long entry {} -> {} {} {} {} {}'.format(
+                    id=self.okx.id, *out))
+
+                return PositionSide.LONG
+
+            # if bid_delta > fee_spread and ask_delta < fee_spread * 0.2 and sell_amount / cum_bid_volume >= 0.050 and sell_amount / buy_amount >= 2:
+
+            #     out = (self.okx.orderbooks[self.symbol].get('bids')[0][0], self.okx.orderbooks[self.symbol].get('bids')[4][0], bid_delta, ask_delta, cum_bid_volume / cum_ask_volume, sell_amount / buy_amount)
+
+            #     logger.info('{id} trailing entry - no trades found - found short entry {} -> {} {} {} {} {}'.format(
+            #         id=self.okx.id, *out))
+
+            #     return None
+
+            GREEN = '\033[92m'
+            RED = '\033[91m'
+            BLUE = '\033[96m'
+            MAGENTA = '\033[95m'
+            PURPLE = '\033[94m'
+            END = '\033[0m'
+
+            trade = self.okx.trades.get(self.symbol)[-1]
+
+            ask_history = list(np.asarray(self.okx.orderbooks[self.symbol].get('asks'))[:, 0])
+            bid_history = list(np.asarray(self.okx.orderbooks[self.symbol].get('bids'))[:, 0])
+
+            if trade.get('price') in ask_history:
+                trade['price'] = GREEN + str(trade.get('price')) + END
+
+            if trade.get('price') in bid_history:
+                trade['price'] = RED + str(trade.get('price')) + END
+
+            # cum_ask_volume = '{:09.2f}'.format(cum_ask_volume)
+            # cum_bid_volume = '{:09.2f}'.format(cum_bid_volume)
+            ask_volume = self.okx.orderbooks[self.symbol].get('asks')[0][1]
+            bid_volume = self.okx.orderbooks[self.symbol].get('bids')[0][1]
+
+            if bid_delta > fee_spread and ask_delta < fee_spread * 0.2:
+                ask_delta = BLUE + '{:07.2f}'.format(ask_delta) + END
+                bid_delta = BLUE + '{:07.2f}'.format(bid_delta) + END
+            else:
+                ask_delta = '{:07.2f}'.format(ask_delta)
+                bid_delta = '{:07.2f}'.format(bid_delta)
+
+            sell_amount_formatted = ''
+            if sell_amount / cum_bid_volume >= 0.025:
+                sell_amount_formatted = MAGENTA + '{:08.2f}'.format(sell_amount) + END
+            else:
+                sell_amount_formatted = '{:08.2f}'.format(sell_amount)
+
+            buy_amount_formatted = ''
+            if buy_amount / cum_ask_volume >= 0.025:
+                buy_amount_formatted = MAGENTA + '{:08.2f}'.format(buy_amount) + END
+            else:
+                buy_amount_formatted = '{:08.2f}'.format(buy_amount)
+
+            amount = trade.get('amount')
+            if amount >= 1000:
+                amount = MAGENTA + '{:07.2f}'.format(amount) + END
+            else:
+                amount = '{:07.2f}'.format(amount)
+
+            cum_ask_volume = '{:09.2f}'.format(cum_ask_volume)
+            cum_bid_volume = '{:09.2f}'.format(cum_bid_volume)
+
+            asks = list(np.asarray(self.okx.orderbooks[self.symbol].get('asks'))[:5][:, 0])
+            bids = list(np.asarray(self.okx.orderbooks[self.symbol].get('bids'))[:5][:, 0])
+
+            out = '{} {} {} {} {} - {} {} {} {} {} - {} {} - {} {} - {} {} - {} {}'.format(
+                asks[4], 
+                asks[3], 
+                asks[2], 
+                asks[1], 
+                asks[0], 
+                bids[0], 
+                bids[1], 
+                bids[2], 
+                bids[3], 
+                bids[4],  
+                cum_ask_volume,
+                buy_amount_formatted, 
+                sell_amount_formatted,
+                cum_bid_volume,
+                trade.get('price'), 
+                amount, 
+                ask_delta, 
+                bid_delta
+            )
+
+            # print(out)
+
+        return None
 
     def process_orders(self, orders):
 
@@ -205,12 +235,18 @@ class Botti:
                 logger.info('{exchange_id} recent order {status}'.format(
                     exchange_id=self.okx.id, status=order.get('status')))
 
-                if self.cache.position.status is PositionStatus.PENDING:
+                # remove missed entry 
+                if self.cache.position.status is PositionStatus.PENDING and order.get('filled') == 0:
+                    logger.info('{id} process orders - entry missed removing {position}'.format(id=self.okx.id, position=self.cache.position.id))
+
                     self.cache.remove('position', self.cache.position.id)
 
-                if self.cache.position.state is PositionState.EXIT and self.cache.position.side == order.get('side') and order.get('filled') > self.cache.position.pending_close_amount:
+                if self.cache.position.state is PositionState.EXIT and 'buy' in order.get('side') and order.get('filled') > self.cache.position.pending_close_amount:
+
+                    order_side = 'sell' if self.cache.position.side is PositionSide.LONG else 'buy'
+                    price = self.cache.position.open_avg * (1 + self.fee)**2 if self.cache.position.side is PositionSide.LONG else self.cache.position.open_avg * (1 - self.fee)**2
                     
-                    args = self.symbol, 'limit', 'sell', order.get('filled') - self.cache.position.pending_close_amount, self.cache.position.open_avg * (1 + self.fee)**2, { 'tdMode': 'cross', 'posSide': 'long' }
+                    args = self.symbol, 'limit', order_side, order.get('filled') - self.cache.position.pending_close_amount, price, { 'tdMode': 'cross', 'posSide': self.cache.position.side.value }
                     self.queue.put_nowait(('create', PositionState.EXIT, args))
 
                     logger.info('{id} process orders - adjusting for order surplus'.format(id=self.okx.id))
@@ -227,7 +263,7 @@ class Botti:
             if order.get('filled') == 0:
                 return
 
-            type = 'increase' if order.get('side') == self.cache.position.side else 'decrease'
+            type = 'increase' if order.get('side') == 'buy' and self.cache.position.side is PositionSide.LONG or order.get('side') == 'sell' and self.cache.position.side is PositionSide.SHORT else 'decrease'
             if type == 'increase':
 
                 amount = order.get('filled')
@@ -271,8 +307,8 @@ class Botti:
 
             position = self.cache.position if self.cache.position.id else self.cache.last
 
-            logger.info('{exchange_id} adjusted position - {id} {symbol} {open_avg} {open_amount} {close_avg} {close_amount} {status} {state} {pnl}'.format(
-                exchange_id=self.okx.id, id=position.id,symbol=position.symbol, open_avg=position.open_avg, open_amount=position.open_amount,close_avg=position.close_avg, close_amount=position.close_amount,status=position.status,state=position.state,pnl=position.pnl(self.leverage) if position.open_amount == position.close_amount else ''))
+            logger.info('{exchange_id} adjusted position - {id} {symbol} {open_avg} {open_amount} {close_avg} {close_amount} {side} {status} {state} {pnl}'.format(
+                exchange_id=self.okx.id, id=position.id,symbol=position.symbol, open_avg=position.open_avg, open_amount=position.open_amount,close_avg=position.close_avg, close_amount=position.close_amount,side=position.side,status=position.status,state=position.state,pnl=position.pnl(self.leverage) if position.open_amount == position.close_amount else ''))
             
         except Exception as e:
             log_exception(e, self.okx.id)
@@ -300,13 +336,14 @@ class Botti:
             await asyncio.sleep(0)
             if not self.queue.empty():
                 try:
-
                     (command, state, args) = self.queue.get_nowait()
                     if command == 'create':
-                        await self.okx.create_order(*args)
+                        await getattr(self.okx, 'createOrder')(*args)
                     
                     if command == 'cancel':
-                        await self.okx.cancel_order(*args)
+                        await getattr(self.okx, 'cancelOrder')(*args)
+
+                    self.queue.task_done()
 
                 except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
                     
@@ -316,71 +353,103 @@ class Botti:
 
                         if self.cache.position.state is PositionState.EXIT and self.cache.position.pending_open_amount > self.cache.position.pending_close_amount:
 
-                            args = self.symbol, 'limit', 'sell', self.cache.position.pending_open_amount - self.cache.position.pending_close_amount, self.cache.position.open_avg * (1 + self.fee)**2, { 'tdMode': 'cross', 'posSide': 'long' }
+                            order_side = 'sell' if self.cache.position.side is PositionSide.LONG else 'buy'
+                            price = self.cache.position.open_avg * (1 + self.fee)**2 if self.cache.position.side is PositionSide.LONG else self.cache.position.open_avg * (1 - self.fee)**2
+
+                            args = self.symbol, 'limit', order_side, self.cache.position.pending_open_amount - self.cache.position.pending_close_amount, price, { 'tdMode': 'cross', 'posSide': self.cache.position.side.value }
                             self.queue.put_nowait(('create', PositionState.EXIT, args))
 
+                            logger.info('{id} consumer - adjusting for order surplus'.format(id=self.okx.id))
+
+                        self.queue.task_done()
+                        
                         continue
 
                     if type(e).__name__ == 'InsufficientFunds' and state is PositionState.ENTRY and command == 'create':
                         logger.info('{id} consumer - insufficient funds removing {position}'.format(id=self.okx.id,position=self.cache.position.id))
                         self.cache.remove('position', self.cache.position.id)
+
+                        self.queue.task_done()
+
                         continue
 
                     if type(e).__name__ == 'InvalidOrder' and state is PositionState.ENTRY and command == 'create':
-                        logger.info('{id} consumer - insufficient funds removing {position}'.format(id=self.okx.id,position=self.cache.position.id))
+                        logger.info('{id} consumer - invalid order removing {position}'.format(id=self.okx.id,position=self.cache.position.id))
                         self.cache.remove('position', self.cache.position.id)
+
+                        self.queue.task_done()
+
                         continue
+
+                    print(e)
 
                     log_exception(e, self.okx.id) 
 
-                self.queue.task_done()
-
-    # FIXME: doesnt handle missed entries
     async def strategy(self) -> None:
 
         while True:
 
             await asyncio.sleep(0)
-            if len(self.okx.orderbooks) == 0:
+            if self.symbol not in self.okx.orderbooks:
                 continue
 
             try:
 
+                # # close missed entry
+                # # position will be removed when there's confirmation of a canceled order with 0 fills when processing orders
+                # if self.cache.position.state is PositionState.ENTRY and self.cache.position.status is PositionStatus.PENDING:
+                #     order = self.cache.fetch_order()
+                #     if order.get('status') == 'open' and order.get('filled') == 0:
+                #         args = order.get('id'), self.symbol
+                #         self.queue.put_nowait(('cancel', PositionState.ENTRY, args))
+
                 # exit 
-                if self.cache.position.status is PositionStatus.OPEN and self.cache.position.state is PositionState.ENTRY:
+                if self.cache.position.status is PositionStatus.OPEN and self.cache.position.state is PositionState.ENTRY and self.break_even():
 
-                    if self.break_even():
+                    self.cache.update(self.cache.position.id, { 'state': PositionState.EXIT })
 
-                        self.cache.update(self.cache.position.id, { 'state': PositionState.EXIT })
+                    order = self.cache.fetch_order()
+                    if order.get('status') == 'open':
+                        args = order.get('id'), self.symbol
+                        self.queue.put_nowait(('cancel', PositionState.EXIT, args))
 
-                        order = self.cache.fetch_order()
-                        if order.get('status') == 'open':
-                            args = order.get('id'), self.symbol
-                            self.queue.put_nowait(('cancel', PositionState.EXIT, args))
+                    self.cache.update(self.cache.position.id, { 'pending_close_amount': self.cache.position.open_amount })
 
-                        self.cache.update(self.cache.position.id, { 'pending_close_amount': self.cache.position.open_amount })
+                    order_side = 'sell' if self.cache.position.side is PositionSide.LONG else 'buy'
+                    price = self.cache.position.open_avg * (1 + self.fee)**2 if self.cache.position.side is PositionSide.LONG else self.cache.position.open_avg * (1 - self.fee)**2
 
-                        args = self.symbol, 'limit', 'sell', self.cache.position.open_amount, self.cache.position.open_avg * (1 + self.fee)**2, { 'tdMode': 'cross', 'posSide': 'long' }
-                        self.queue.put_nowait(('create', PositionState.EXIT, args))
+                    args = self.symbol, 'limit', order_side, self.cache.position.open_amount, price, { 'tdMode': 'cross', 'posSide': self.cache.position.side.value }
+                    self.queue.put_nowait(('create', PositionState.EXIT, args))
 
                 # entry
-                if not self.cache.position.status and self.trailing_entry():
+                if self.cache.position.status is PositionStatus.NONE:
 
-                    self.cache.insert({ 'id': os.urandom(6).hex(), 'timestamp': int(time.time_ns() / 1000), 'symbol': self.symbol, 'side': 'buy', 'state': PositionState.ENTRY, 'status':  PositionStatus.PENDING })
+                    side = self.trailing_entry()
+                    if side:
 
-                    size = await self.position_size('long') 
-                    if size == 0:
-                        logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
-                        continue
-                    
-                    best_ask = self.okx.orderbooks[self.symbol].get('asks')[0][0]
+                        self.cache.insert({ 'id': os.urandom(6).hex(), 'timestamp': int(time.time_ns() / 1000), 'symbol': self.symbol, 'side': side, 'state': PositionState.ENTRY, 'status':  PositionStatus.PENDING })
 
-                    self.cache.update(self.cache.position.id, { 'pending_open_amount': size })
+                        size = await self.position_size(self.cache.position.side.value) * 0.2
+                        if size == 0:
+                            logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
+                            continue
+                        
+                        price = 0
+                        if self.cache.position.side is PositionSide.LONG:
+                            price = self.okx.orderbooks[self.symbol].get('asks')[0][0]
 
-                    args = self.symbol, 'limit', 'buy', size, best_ask + 1, { 'tdMode': 'cross', 'posSide': 'long' }
-                    self.queue.put_nowait(('create', PositionState.ENTRY, args))
+                        if self.cache.position.side is PositionSide.SHORT:
+                            price = self.okx.orderbooks[self.symbol].get('bids')[0][0]
+
+                        self.cache.update(self.cache.position.id, { 'pending_open_amount': size })
+
+                        order_side = 'buy' if self.cache.position.side is PositionSide.LONG else 'sell'
+    
+                        args = self.symbol, 'limit', order_side, size, price, { 'tdMode': 'cross', 'posSide': self.cache.position.side.value }
+                        self.queue.put_nowait(('create', PositionState.ENTRY, args))
 
             except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+                print(e)
                 log_exception(e, self.okx.id)
 
     async def orders_history(self) -> None:
@@ -402,62 +471,52 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
 
+    def set_trading_fee(self) -> float:
+
+        self.fee = self.okx.markets[self.symbol].get('taker')
+
+        logger.info('{id} set fee to {fee}'.format(id=self.okx.id, fee=self.fee))
+
     async def set_leverage(self):
 
         params={ 'mgnMode': 'cross' }
 
         try:
-            response: dict = await self.okx.fetch_leverage(self.symbol, params)
+            response: dict = await getattr(self.okx, 'fetchLeverage')(self.symbol, params)
             if int(response.get('data')[0].get('lever')) is not self.leverage:
-                await self.okx.set_leverage(self.leverage, self.symbol, params)
+                await getattr(self.okx, 'setLeverage')(self.leverage, self.symbol, params)
 
                 logger.info('{id} set leverage to {leverage}'.format(id=self.okx.id,leverage=self.leverage))
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
 
-            # make sure run recieves the error to retry
-            if type(e).__name__ == 'NetworkError':
-                raise ccxtpro.NetworkError(e)
-
     async def watch_trades(self):
 
         try:
             while True:
-                await self.okx.watch_trades(self.symbol)
-
+                await asyncio.sleep(0)
+                await getattr(self.okx, 'watchTrades')(self.symbol)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
-
-            # make sure run recieves the error to retry
-            if type(e).__name__ == 'NetworkError':
-                raise ccxtpro.NetworkError(e)
 
     async def watch_order_book(self):
 
         try:
             while True:
-                await self.okx.watch_order_book(self.symbol, limit=20)               
+                await asyncio.sleep(0)   
+                await getattr(self.okx, 'watchOrderBook')(self.symbol, limit = 20)  
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
 
-            # make sure run recieves the error to retry
-            if type(e).__name__ == 'NetworkError':
-                raise ccxtpro.NetworkError(e)
-
+    # FIXME: ensure ALL new orders only are received
     async def watch_orders(self):
         try:
             while True:
-                # limit = 1 seems to be only way that works to get only the newest updates from cache
-                orders = await self.okx.watch_orders(self.symbol,limit=1)
+                orders: list = await getattr(self.okx, 'watchOrders')(self.symbol, limit = 1)
                 self.process_orders(orders)
-
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
-
-            # make sure run recieves the error to retry
-            if type(e).__name__ == 'NetworkError':
-                raise ccxtpro.NetworkError(e)
 
     async def system_status(self):
         
@@ -478,23 +537,19 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
 
-            # make sure run recieves the error to retry
-            if type(e).__name__ == 'NetworkError':
-                raise ccxtpro.NetworkError(e)
-
     def run(self):
 
         logger.info('starting botti')
 
         try:
-
+            self.okx.options
             self.okx = Exchange({
                 'asyncio_loop': self.loop,
                 'newUpdates': True,
                 'apiKey': self.key,
                 'secret': self.secret,
                 'password': self.password,
-                'options': { 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }, 'newUpdates': True }
+                'options': { 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }}
             })
 
             self.loop.run_until_complete(self.system_status())
@@ -502,8 +557,12 @@ class Botti:
             self.okx.set_sandbox_mode(self.test)
 
             self.loop.run_until_complete(self.okx.load_markets(reload=False))
+
             # make sure leverage is updated
             self.loop.run_until_complete(self.set_leverage())
+
+            # set trading fee
+            self.set_trading_fee()
 
             # required to repopulate an already opened position
             self.loop.run_until_complete(self.orders_history())
@@ -512,16 +571,10 @@ class Botti:
                 self.watch_order_book(),
                 self.watch_trades(),
                 self.consumer(),
-                self.strategy(),
-                self.dump() 
+                self.strategy()
             ]
 
             self.loop.run_until_complete(asyncio.gather(*loops))
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.okx.id)
-
-            # raise so systemd restarts otherwise let daemon shutdown
-            if type(e).__name__ == 'NetworkError':
-    
-                raise ccxtpro.NetworkError(e)

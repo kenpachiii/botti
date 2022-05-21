@@ -55,6 +55,7 @@ class Cache:
             self.con.commit()
         except Exception as e:
             log_exception(e)
+            print(e)
 
     def fetch_order(self) -> dict:
         try: 
@@ -116,7 +117,7 @@ class Cache:
                 if type(position[k]) == dict or type(position[k]) == list:
                     position[k] = json.dumps(position[k])
 
-                if k == 'status' or k == 'state':
+                if k == 'status' or k == 'state' or k == 'side':
                     position[k] = position.get(k).value
 
             columns = ', '.join("`" + str(x) + "`" for x in position.keys())
@@ -128,6 +129,7 @@ class Cache:
             self.con.commit()
         except Exception as e:
             log_exception(e)
+            print(e)
 
     def update(self, id: str, position: dict) -> None:
 
@@ -141,7 +143,7 @@ class Cache:
                 if k == 'id':
                     continue
 
-                if k == 'status' or k == 'state':
+                if k == 'status' or k == 'state' or k == 'side':
                     args.append(k + ' = ' + "'{}'".format(str(position.get(k).value)))
 
                     continue
@@ -154,6 +156,7 @@ class Cache:
             self.con.commit()
         except Exception as e:
             log_exception(e)
+            print(e)
 
     def remove(self, table: str, id: str) -> None:
         try:

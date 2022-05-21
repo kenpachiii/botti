@@ -1,24 +1,24 @@
 from decimal import DivisionByZero
 from typing import Any
 
-from botti.enums import PositionState, PositionStatus
+from botti.enums import PositionSide, PositionState, PositionStatus
 
-class Position:
+class Position(object):
 
     def __init__(self, object: dict = {}) -> None:
 
         self._id: str = object.get('id')
         self._timestamp: int = object.get('timestamp') or 0
         self._symbol: str = object.get('symbol')
-        self._side: str = object.get('side')
+        self._side: PositionSide = PositionSide(object.get('side'))
         self._open_amount: float = object.get('open_amount') or 0
         self._pending_open_amount: float = object.get('pending_open_amount') or 0
         self._open_avg: float = object.get('open_avg') or 0
         self._close_amount: float = object.get('close_amount') or 0
         self._pending_close_amount: float = object.get('pending_close_amount') or 0
         self._close_avg: float = object.get('close_avg') or 0
-        self._status: PositionStatus = object.get('status') 
-        self._state: PositionState = object.get('state')
+        self._status: PositionStatus = PositionStatus(object.get('status'))
+        self._state: PositionState = PositionState(object.get('state'))
         self._triggered: bool = object.get('triggered') or 0
 
     @property
@@ -34,8 +34,8 @@ class Position:
         return self._symbol
 
     @property
-    def side(self) -> str:
-        return self._side
+    def side(self) -> PositionSide:
+        return PositionSide(getattr(self, '_side', None))
 
     @property
     def open_amount(self) -> float:
@@ -63,11 +63,11 @@ class Position:
 
     @property
     def status(self) -> PositionStatus: 
-        return PositionStatus(self._status) if self._status is not None else None
+        return PositionStatus(getattr(self, '_status', None))
 
     @property
     def state(self) -> PositionState: 
-        return PositionState(self._state) if self._state is not None else None
+        return PositionState(getattr(self, '_state', None))
 
     @property
     def triggered(self) -> int: 

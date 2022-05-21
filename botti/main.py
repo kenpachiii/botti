@@ -1,10 +1,11 @@
+import argparse
 import logging
 
 from botti.loggers import setup_logging
 from botti.botti import Botti
-from botti.position import PositionStatus
+from botti.exceptions import log_exception
 
-api_keys = {
+keys = {
     'main': {
         'key': '56956a7f-34ed-48f0-b113-aa00f45a525e',
         'secret': 'F4BAE9A3844E26FC46693A33582C9D8A',
@@ -31,8 +32,20 @@ def main():
 
     setup_logging()
 
-    botti = Botti(symbol='BTC/USDT:USDT', fee = 0.0005, leverage = 3, upper_limit = 1.005, lower_limit = 0.995, tp = 1.005, **api_keys['demo'])
+    parser = argparse.ArgumentParser(description='Botti trading bot.')
+    parser.add_argument('--symbol', type=str, help='symbol to trade', required = True)
+    parser.add_argument('--leverage', type=int, help='leverage to use', required = True)
+
+    args = parser.parse_args()
+
+    botti = Botti(symbol=args.symbol, leverage = args.leverage, upper_limit = 1.005, lower_limit = 0.995, **keys['demo'])
     botti.run()
+
+
+
+
+
+
 
 
 
