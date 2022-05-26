@@ -35,7 +35,7 @@ def main():
     parser = argparse.ArgumentParser(description='Botti trading bot.')
     parser.add_argument('--symbol', type=str, help='symbol to trade', required = True)
     parser.add_argument('--leverage', type=int, help='leverage to use', required = True)
-    parser.add_argument('--keys', type=int, help='keys to use', required = True)
+    parser.add_argument('--keys', type=str, help='keys to use', required = True)
 
     args = parser.parse_args()
 
