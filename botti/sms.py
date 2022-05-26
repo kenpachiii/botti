@@ -64,7 +64,7 @@ def send_sms(type: str, msg: str) -> None:
                 msg['From'] = 'botti.notification@gmail.com'
                 msg['To'] = ', '.join(recipients)
 
-                # server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
+                server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
                 server.close()
 
                 update_queue(msg)
