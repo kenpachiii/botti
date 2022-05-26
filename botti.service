@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=%h/botti
-ExecStart=/usr/bin/python3 -m botti --symbol BTC/USDT:USDT --fee 0.0005 --leverage 3
+ExecStart=/usr/bin/python3 -m botti --symbol BTC/USDT:USDT --fee 0.0005 --leverage 3 --keys main
 Restart=on-failure
 RestartSec=5s
 
