@@ -57,33 +57,6 @@ class Botti:
         logger.info('{id} closed loop'.format(id=self.okx.id))
         self.loop.close()
 
-    # def market_depth(self, side: str, price: float, size: float, limit: float = 100) -> int:
-
-    #     orders = np.asarray(self.okx.orderbooks[self.symbol].get(side))[:limit]
-
-    #     # bid window = best bid > price > worst bid
-    #     if 'bids' in side and not (orders[0][0] >= price >= orders[-1][0]):
-    #         return -1
-
-    #     # ask window = best ask < price < worst ask
-    #     if 'asks' in side and not (orders[0][0] <= price <= orders[-1][0]):
-    #         return -1
-
-    #     index_arr: np.ndarray
-    #     if 'bids' in side:
-    #         # find index where price < orders price
-    #         index_arr = np.argwhere(price <= orders[:, 0])
-
-    #     if 'asks' in side:
-    #         # find index where price > orders price
-    #         index_arr = np.argwhere(price >= orders[:, 0])
-
-    #     depth = -1
-    #     if index_arr.size > 0:
-    #         depth = index_arr[-1][0] 
-
-    #     return depth
-
     def break_even(self) -> bool:
 
         if self.cache.position.side is PositionSide.LONG:
@@ -143,85 +116,8 @@ class Botti:
             #     logger.info('{id} trailing entry - no trades found - found short entry {} -> {} {} {} {} {}'.format(
             #         id=self.okx.id, *out))
 
-            #     return None
-
-            GREEN = '\033[92m'
-            RED = '\033[91m'
-            BLUE = '\033[96m'
-            MAGENTA = '\033[95m'
-            PURPLE = '\033[94m'
-            END = '\033[0m'
-
-            trade = self.okx.trades.get(self.symbol)[-1]
-
-            ask_history = list(np.asarray(self.okx.orderbooks[self.symbol].get('asks'))[:, 0])
-            bid_history = list(np.asarray(self.okx.orderbooks[self.symbol].get('bids'))[:, 0])
-
-            if trade.get('price') in ask_history:
-                trade['price'] = GREEN + str(trade.get('price')) + END
-
-            if trade.get('price') in bid_history:
-                trade['price'] = RED + str(trade.get('price')) + END
-
-            # cum_ask_volume = '{:09.2f}'.format(cum_ask_volume)
-            # cum_bid_volume = '{:09.2f}'.format(cum_bid_volume)
-            ask_volume = self.okx.orderbooks[self.symbol].get('asks')[0][1]
-            bid_volume = self.okx.orderbooks[self.symbol].get('bids')[0][1]
-
-            if bid_delta > fee_spread and ask_delta < fee_spread * 0.2:
-                ask_delta = BLUE + '{:07.2f}'.format(ask_delta) + END
-                bid_delta = BLUE + '{:07.2f}'.format(bid_delta) + END
-            else:
-                ask_delta = '{:07.2f}'.format(ask_delta)
-                bid_delta = '{:07.2f}'.format(bid_delta)
-
-            sell_amount_formatted = ''
-            if sell_amount / cum_bid_volume >= 0.025:
-                sell_amount_formatted = MAGENTA + '{:08.2f}'.format(sell_amount) + END
-            else:
-                sell_amount_formatted = '{:08.2f}'.format(sell_amount)
-
-            buy_amount_formatted = ''
-            if buy_amount / cum_ask_volume >= 0.025:
-                buy_amount_formatted = MAGENTA + '{:08.2f}'.format(buy_amount) + END
-            else:
-                buy_amount_formatted = '{:08.2f}'.format(buy_amount)
-
-            amount = trade.get('amount')
-            if amount >= 1000:
-                amount = MAGENTA + '{:07.2f}'.format(amount) + END
-            else:
-                amount = '{:07.2f}'.format(amount)
-
-            cum_ask_volume = '{:09.2f}'.format(cum_ask_volume)
-            cum_bid_volume = '{:09.2f}'.format(cum_bid_volume)
-
-            asks = list(np.asarray(self.okx.orderbooks[self.symbol].get('asks'))[:5][:, 0])
-            bids = list(np.asarray(self.okx.orderbooks[self.symbol].get('bids'))[:5][:, 0])
-
-            out = '{} {} {} {} {} - {} {} {} {} {} - {} {} - {} {} - {} {} - {} {}'.format(
-                asks[4], 
-                asks[3], 
-                asks[2], 
-                asks[1], 
-                asks[0], 
-                bids[0], 
-                bids[1], 
-                bids[2], 
-                bids[3], 
-                bids[4],  
-                cum_ask_volume,
-                buy_amount_formatted, 
-                sell_amount_formatted,
-                cum_bid_volume,
-                trade.get('price'), 
-                amount, 
-                ask_delta, 
-                bid_delta
-            )
-
-            # print(out)
-
+            #     return PositionSide.SHORT
+            
         return None
 
     def process_orders(self, orders):

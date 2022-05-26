@@ -196,7 +196,7 @@ class Introspect:
 
         path = os.path.join('data', kwargs.get('exchange', 'okx'))
 
-        self.order_book: dict = self.load_order_book(os.path.join(path, 'order_book', '2022-05-19.xz'))
+        # self.order_book: dict = self.load_order_book(os.path.join(path, 'order_book', '2022-05-19.xz'))
         self.trades: FileReader = FileReader(os.path.join(path, 'trades', '*'))
         self.cache = Cache('botti.db')
 
@@ -382,60 +382,68 @@ class Introspect:
         entries = []
         total = self.trades.length()
 
-        df = pd.DataFrame(columns=['timestamp', 'price', 'amount', 'side', 'asks', 'bids'])
+        df = pd.DataFrame(columns=['timestamp', 'price', 'amount', 'side'])
         with tqdm(total=total) as pbar:
 
-            order_book_keys = np.asarray(list(self.order_book.keys()))
+            # order_book_keys = np.asarray(list(self.order_book.keys()))
 
-            self.trades.next()
-            while line := self.trades.next():
-
+            for line in lzma.open(self.trades.files.pop(0), 'rb').readlines():
+ 
                 trade = Trade(line)
         
-                index = np.argwhere(int(trade.timestamp) >= order_book_keys)
-                if index.size > 0:
-                    key = order_book_keys[index.size]
-                    book = OrderBook(self.order_book[key])
+                # index = np.argwhere(int(trade.timestamp) >= order_book_keys)
+                # if index.size > 0:
+                #     key = order_book_keys[index.size]
+                #     book = OrderBook(self.order_book[key])
 
-                    timestamp = getattr(trade, 'timestamp')
-                    price = getattr(trade, 'price')
-                    amount = getattr(trade, 'amount')
-                    side = getattr(trade, 'side')
+                timestamp = getattr(trade, 'timestamp')
+                price = getattr(trade, 'price')
+                amount = getattr(trade, 'amount')
+                side = getattr(trade, 'side')
 
-                    asks = getattr(book, 'asks')
-                    bids = getattr(book, 'bids')
+                # asks = getattr(book, 'asks')
+                # bids = getattr(book, 'bids')
 
-                    df.loc[df.index.size] = [timestamp, price, amount, side, asks, bids]
+                df.loc[df.index.size] = [timestamp, price, amount, side]
 
                 pbar.update(1)
 
-            df['bid_ask_spread'] = df.apply(lambda row: row.asks[0][0] - row.bids[0][0], axis = 1)
-            df['ask_spread'] = df.apply(lambda row: row.asks[4][0] - row.asks[0][0], axis = 1)
-            df['bid_spread'] = df.apply(lambda row: row.bids[0][0] - row.bids[4][0], axis = 1)
-
-            df['ask_cum_volume'] = df.apply(lambda row: np.sum(np.asarray(row.asks)[:, 1]), axis = 1)
-            df['bid_cum_volume'] = df.apply(lambda row: np.sum(np.asarray(row.bids)[:, 1]), axis = 1)
-
-            df2: pd.DataFrame = df.groupby(['timestamp', 'side']).agg(avg_tx_size=('amount', np.mean), amount=('amount', np.sum), price=('price', np.mean), ask_cum_volume=('ask_cum_volume', np.mean), bid_cum_volume=('bid_cum_volume', np.mean)).reset_index()
+            df2: pd.DataFrame = df.groupby(['timestamp', 'side']).agg(avg_tx_size=('amount', np.mean), amount=('amount', np.sum), price=('price', np.mean)).reset_index()
          
             df2['timestamp_diff'] = (df2['timestamp'] - df2.shift(1)['timestamp']) 
-
             df2['timestamp_diff_avg'] = df2.apply(lookback_window, values = df2['timestamp_diff'], method = 'mean', axis = 1).fillna(0)
- 
-            df2['sell_to_bid_cum'] = df2.apply(lambda row: row.amount / row.bid_cum_volume if row.side == 'sell' else row.amount / row.ask_cum_volume, axis = 1)
-            df2['buy_to_ask_cum'] = df2.apply(lambda row: row.amount / row.bid_cum_volume if row.side == 'sell' else row.amount / row.ask_cum_volume, axis = 1)
-            
 
-            df2['log_returns'] = np.log(df2['price'] / self.safe_devisor(df2.shift(1)['price']))
+            df2['log_returns'] = np.log(df2['price'] / df2.shift(1)['price'])
             df2['sd'] = df2.apply(lookback_window, values = df2['log_returns'], method = 'std', axis = 1).fillna(0)
-            df2['volatility'] = df2.apply(lambda row: row.sd * np.sqrt((row.timestamp_diff_avg / 86400) / 365), axis = 1).fillna(0)
+
+            df2['volatility'] = df2.apply(lambda row: row.sd * np.sqrt((60 / 86400) / 365), axis = 1).fillna(0)
+
             df2['spread'] = df2.apply(lambda row: row.price * row.volatility * np.sqrt(row.avg_tx_size / row.amount), axis = 1).fillna(0)
 
-            df.fillna(0)
             df2.fillna(0)
+            df2.to_json('./introspect.json')
 
-            print(df2)
-            print('dataframe size {} bytes'.format(df.memory_usage().sum()))
+            # df['bid_ask_spread'] = df.apply(lambda row: row.asks[0][0] - row.bids[0][0], axis = 1)
+            # df['ask_spread'] = df.apply(lambda row: row.asks[4][0] - row.asks[0][0], axis = 1)
+            # df['bid_spread'] = df.apply(lambda row: row.bids[0][0] - row.bids[4][0], axis = 1)
+
+            # df['ask_cum_volume'] = df.apply(lambda row: np.sum(np.asarray(row.asks)[:, 1]), axis = 1)
+            # df['bid_cum_volume'] = df.apply(lambda row: np.sum(np.asarray(row.bids)[:, 1]), axis = 1)
+
+            # df2: pd.DataFrame = df.groupby(['timestamp', 'side']).agg(avg_tx_size=('amount', np.mean), amount=('amount', np.sum), price=('price', np.mean), ask_cum_volume=('ask_cum_volume', np.mean), bid_cum_volume=('bid_cum_volume', np.mean)).reset_index()
+         
+            # df2['timestamp_diff'] = (df2['timestamp'] - df2.shift(1)['timestamp']) 
+
+            # df2['timestamp_diff_avg'] = df2.apply(lookback_window, values = df2['timestamp_diff'], method = 'mean', axis = 1).fillna(0)
+ 
+            # df2['sell_to_bid_cum'] = df2.apply(lambda row: row.amount / row.bid_cum_volume if row.side == 'sell' else row.amount / row.ask_cum_volume, axis = 1)
+            # df2['buy_to_ask_cum'] = df2.apply(lambda row: row.amount / row.bid_cum_volume if row.side == 'sell' else row.amount / row.ask_cum_volume, axis = 1)
+            
+            # df.fillna(0)
+            # df2.fillna(0)
+
+            # print(df2)
+            # print('dataframe size {} bytes'.format(df.memory_usage().sum()))
 
             # print('time between trades {} {} {}'.format(df2['timestamp_diff'].min(), df2['timestamp_diff'].max(), df2['timestamp_diff'].mean()))
 
@@ -576,16 +584,16 @@ class Introspect:
         for value in values:
             print({k: value[k] for k in value.keys()})
 
-# introspect = Introspect(exchange = 'okx')
+introspect = Introspect(exchange = 'okx')
 
-# # print(introspect.dump_position())
+# print(introspect.dump_position())
 
-# try:
-#     n_tic = time.process_time()
-#     total = introspect.process_trades()
-#     print('completed {} in {} ms'.format(total, 1000 * (time.process_time() - n_tic)))
-# except Exception as e:
-#     print(e.with_traceback())
+try:
+    n_tic = time.process_time()
+    total = introspect.process_trades()
+    print('completed {} in {} ms'.format(total, 1000 * (time.process_time() - n_tic)))
+except Exception as e:
+    print(e.with_traceback())
 
 # import pandas as pd
 # import numpy as np
@@ -605,35 +613,37 @@ class Introspect:
 
 # print(df2.fillna(0))
 
-import struct, sys, time
+# import struct, sys, time
 
-timestamp = int(time.time())
+# timestamp = int(time.time())
 
-bids = [[int(40000.45 * 1000), int(100.5 * 1000)]] * 400
-asks = [[int(50000.45 * 1000), int(200.5 * 1000)]] * 400
+# bids = [[int(40000.45 * 1000), int(100.5 * 1000)]]
+# asks = [[int(50000.45 * 1000), int(200.5 * 1000)]]
 
-bytes = b''
-bytes += struct.pack('i', timestamp)
+# bytes = b''
+# bytes += struct.pack('i', timestamp)
 
-b = b''
-for arr in bids:
-    packed = struct.pack('i' * len(arr) , *arr)
-    b += packed
+# b = b''
+# for arr in bids:
+#     packed = struct.pack('i' * len(arr) , *arr)
+#     b += packed
 
-a = b''
-for arr in asks:
-    packed = struct.pack('i' * len(arr) , *arr)
-    a += packed
+# a = b''
+# for arr in asks:
+#     packed = struct.pack('i' * len(arr) , *arr)
+#     a += packed
 
-index = struct.pack('i', int(len(bids) + 2))
+# index = struct.pack('i', int(len(bids) + 2))
 
-bytes += index + b + a
-print(len(bytes))
+# bytes += index + b + a
+# print(len(bytes))
 
-array = struct.unpack('i' * (len(bytes) // 4), bytes)
+# array = struct.unpack('i' * (len(bytes) // 4), bytes)
+# import json
 
+# df = pd.read_json('./introspect.json')
 
-
+# print(df.to_string())
      
 
 
