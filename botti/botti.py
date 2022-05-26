@@ -325,7 +325,7 @@ class Botti:
 
                         self.cache.insert({ 'id': os.urandom(6).hex(), 'timestamp': int(time.time_ns() / 1000), 'symbol': self.symbol, 'side': side, 'state': PositionState.ENTRY, 'status':  PositionStatus.PENDING })
 
-                        size = await self.position_size(self.cache.position.side.value) * 0.2
+                        size = await self.position_size(self.cache.position.side.value) 
                         if size == 0:
                             logger.info('{id} trailing entry - size was zero'.format(id=self.okx.id))
                             continue
