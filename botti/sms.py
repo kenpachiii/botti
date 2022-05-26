@@ -14,7 +14,7 @@ def delay_message(msg: str) -> bool:
     for i in range(0, len(queue)):
 
         (sms, timestamp) = queue[i]
-        if msg == sms and int(time.time() * 1000) - timestamp < 3600:
+        if msg == sms and int(time.time() * 1000) - timestamp < 3600000:
             delay = True
 
     return delay
