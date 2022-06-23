@@ -6,6 +6,7 @@ To launch Botti as a module
 """
 
 from botti import main
+from asyncio import run
 
 if __name__ == '__main__':
-    main.main()
+    run(main.main())

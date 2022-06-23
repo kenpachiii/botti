@@ -95,4 +95,4 @@ class Position(object):
             close = close if close > 0 else self.close_avg
             return (((close - self.open_avg) / self.open_avg) * 100) * leverage
         except (DivisionByZero, ZeroDivisionError):
-            return 0.0
+            pass

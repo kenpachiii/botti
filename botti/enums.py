@@ -29,23 +29,11 @@ class PositionSide(Enum):
         return self.name
 
 @unique
-class SystemState(Enum):
-    SCHEDULED = 'scheduled'
-    ONGOING = 'ongoing'
-    COMPLETED = 'completed'
-    CANCELED = 'canceled'
-
-    def __str__(self):
-        return self.name
-
-@unique
-class ServiceType(Enum):
-    WEBSOCKET = '0'
-    SPOTMARGIN = '1'
-    FUTURES = '2'
-    PERPETUAL = '3'
-    OPTIONS = '4'
-    TRADING = '5'
+class SystemStatus(Enum):
+    OK = 'ok'
+    SHUTDOWN = 'shutdown'
+    ERROR = 'error'
+    MAITENANCE = 'maintenance'
 
     def __str__(self):
         return self.name

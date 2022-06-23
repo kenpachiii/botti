@@ -1,5 +1,7 @@
 import glob
 import math
+from random import randint
+import traceback
 import numpy as np
 import logging
 import lzma
@@ -11,11 +13,18 @@ import mmap
 import shutil
 import tempfile
 import pandas as pd
+import multiprocessing as mp
 from datetime import datetime, timezone, timedelta
+from scipy.stats import jarque_bera, skew, norm, cauchy, gaussian_kde
 from tqdm import tqdm
+import matplotlib
+import matplotlib.pyplot as plt
 
 from botti.cache import Cache
 from botti.enums import PositionStatus, PositionState
+
+pd.set_option('display.precision', 10)
+# pd.set_option('display.float_format', lambda x: '%.9f' % x)
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +139,6 @@ class FileReader:
         self.files.sort()
 
         self.current_file = None
-        self.previous_line = None
-        self.current_line = None
-        self.collection = None
 
     def __iter__(self):
         return self
@@ -144,6 +150,39 @@ class FileReader:
 
         if self.current_file:
             self.current_file.close()
+
+    def load_temporary(self, file):
+        with tempfile.TemporaryFile() as f_temp:  
+            with lzma.open(file, mode = 'rb') as f:
+                shutil.copyfileobj(f, f_temp)  
+            f_temp.flush()  
+
+            return f_temp
+
+    def chunkify(self, fname, size = 1024*1024):
+
+        with tempfile.NamedTemporaryFile(delete = False) as f_temp:
+            with lzma.open(fname, mode = 'rb') as f:
+
+                shutil.copyfileobj(f, f_temp)
+
+                f_temp.flush()
+                f_temp.seek(0)
+
+                fend = os.path.getsize(f_temp.name)
+                end = f_temp.tell()
+
+                while True:
+                    start = end
+                    f_temp.seek(size, 1)
+                    f_temp.readline()
+                    end = f_temp.tell()
+                    yield f_temp.name, start, end - start
+                    if end > fend:
+                        break
+
+            f.close()
+        f_temp.close()
 
     def next(self):
         
@@ -162,33 +201,34 @@ class FileReader:
         raise StopIteration()
 
     def search(self, f):
-
-        if self.current_line and f(self.current_line) == False:
-            return self.previous_line
-
-        if self.current_line and f(self.current_line):
-            self.previous_line = self.current_line
-            self.current_line = None
-            return self.previous_line
-
-        while line := self.next():
-           
-            if f(line) == False:
-                self.current_line = line
-                return self.previous_line
-
-            self.previous_line = line
+        pass
   
     def length(self):
+
         total = 0
         for file in self.files:
-            with lzma.open(file, 'rb') as f:
-                total += len(f.readlines())
+            with tempfile.TemporaryFile() as f_temp:  
+                with lzma.open(file, mode = 'rb') as f:
+                    shutil.copyfileobj(f, f_temp)  
+                f_temp.flush()  
+                
+                total += os.path.getsize(f_temp.name)
+                f_temp.close()
+
         return total
 
+# example: self.df.apply(lookback_window, values = df2['column'], method = 'mean', axis = 1)
 def lookback_window(row, values, method = 'sum', *args, **kwargs):
     loc = values.index.get_loc(row.name)
     return getattr(values.iloc[0: loc + 1], method)(*args, **kwargs)
+
+def gaussian_kernel(row, values):
+    loc = values.index.get_loc(row.name)
+
+    if loc == 0:
+        return np.nan
+
+    return gaussian_kde(values.iloc[0: loc + 1]).resample(1)[0][0]
 
 class Introspect:
 
@@ -196,33 +236,12 @@ class Introspect:
 
         path = os.path.join('data', kwargs.get('exchange', 'okx'))
 
-        # self.order_book: dict = self.load_order_book(os.path.join(path, 'order_book', '2022-05-19.xz'))
-        self.trades: FileReader = FileReader(os.path.join(path, 'trades', '*'))
+        self.trades = glob.glob(os.path.join(path, 'trades', 'BTC-USDT-SWAP', '*'))
+        self.trades.sort()
+
         self.cache = Cache('botti.db')
 
-    def load_order_book(self, path):
-
-        order_book = {}
-
-        with tempfile.TemporaryFile() as f_temp:  
-            with lzma.open(path, mode = 'rb') as f:
-                shutil.copyfileobj(f, f_temp)  
-            f_temp.flush()  
-            
-            with mmap.mmap(f_temp.fileno(), length = 0, access = mmap.ACCESS_READ) as f_mmap:
-                with tqdm(total=f_mmap.size()) as pbar:
-                    while line := f_mmap.readline():
-
-                        _, value = line.decode().split(';')[0].split(':')
-                        value = int(value)
-
-                        order_book[value] = line
-
-                        pbar.update(len(line))
-          
-            f_temp.close()
-
-        return order_book
+        self.df = pd.DataFrame(columns=['id', 'timestamp', 'price', 'amount', 'side'])
 
     def datetime(self, timestamp: float):
 
@@ -234,341 +253,89 @@ class Introspect:
     def safe_devisor(value):
         return np.max(value, 1)
 
-    def test_strategy(self):
-
-        long_entries, short_entries = {}, {}
-        long_success, short_success = [], []
-
-        depth = 4
-        tick_size = 0.1
-        size = 25
-
-        buy_amount, sell_amount = 1, 1
-        timestamp = 0
-
-        trades_count = self.trades.length()
-
-        ask_spread_history = []
-        bid_spread_history = []
-        buy_amount_history = []
-        sell_amount_history = []
-        cum_ask_history = []
-        cum_bid_history = []
-
-        print('processing {} trade files'.format(trades_count))
-        self.trades.next()
-        while line := self.trades.next():
-
-            trade = Trade(line)
-    
-            condition = lambda x: int(trade.timestamp) >= int(OrderBook(x).timestamp)
-            book = OrderBook(self.order_book.search(condition))
-
-            ask_price = float(getattr(book, 'asks')[0][0])
-            bid_price = float(getattr(book, 'bids')[0][0])
-            ask_spread = getattr(book, 'asks')[depth][0] - ask_price
-            bid_spread = bid_price - getattr(book, 'bids')[depth][0]
-            ask_volume = getattr(book, 'asks')[0][1]
-            bid_volume = getattr(book, 'bids')[0][1]
-            cum_ask_volume = np.sum(np.asarray(getattr(book, 'asks'))[:, 1]) 
-            cum_bid_volume = np.sum(np.asarray(getattr(book, 'bids'))[:, 1]) 
-
-            mid = ask_price + bid_price / 2
-
-            fee_spread = ((mid * 1.0005**2) - mid)
-
-            price = float(getattr(trade, 'price'))
-            amount = float(getattr(trade, 'amount'))
-            side = getattr(trade, 'side')
-
-            long_keys = list(long_entries.keys())
-            short_keys = list(short_entries.keys())
-
-            if timestamp != getattr(trade, 'timestamp'):
-                buy_amount, sell_amount = 1, 1
-
-            timestamp = getattr(trade, 'timestamp')
-
-
-            roc = 0
-            if side == 'buy':
-
-                if len(sell_amount_history) > 2:
-                    a1, a2 = sell_amount_history[::-1][:2]
-                    roc = amount - buy_amount_history[-1] / a2 - a1
-                buy_amount += amount
-
-            if side == 'sell':
-
-                if len(buy_amount_history) > 2:
-                    b1, b2 = buy_amount_history[::-1][:2]
-                    roc = b2 - b1 / amount - sell_amount_history[-1]
-                sell_amount += amount
-
-            # 478052 81 0
-            if ask_spread > fee_spread and ask_price not in long_keys:
-                long_entries[ask_price] = (ask_spread, bid_spread, cum_ask_volume, cum_bid_volume, buy_amount, 0)
-
-            if bid_spread > fee_spread and bid_price not in short_keys:
-                short_entries[bid_price] = (ask_spread, bid_spread, cum_ask_volume, cum_bid_volume, sell_amount, 0)
-
-            for i in range(0, len(long_keys)):
-
-                key = long_keys[i]
-
-                if key in long_success:
-                    continue
-
-                if price < key:
-
-                    mdd = ((price - key) / key) * 100
-                    if long_entries[key][-1] > mdd:
-                        v = list(long_entries[key])
-
-                        v[-1] = mdd
-
-                        long_entries[key] = tuple(v)
-
-                if price > key * 1.0005**2 and ask_volume > size:
-
-                        long_success.append(key)
-
-                        failed = 0
-                        for key in long_keys:
-                            if key not in long_success:
-                                failed += 1
-
-                        print('+ {entry}  {:06.2f} {:06.2f} {:09.2f} {:09.2f} {:08.2f} {:05.2f} {failed}'.format(entry=key, failed=failed, *long_entries[key]))
-
-            for i in range(0, len(short_keys)):
-
-                key = short_keys[i]
-
-                if key in short_success:
-                    continue
-
-                if price > key:
-
-                    mdd = -((price - key) / key) * 100
-                    if short_entries[key][-1] > mdd:
-
-                        v = list(short_entries[key])
-
-                        v[-1] = mdd
-
-                        short_entries[key] = tuple(v)
-
-                if price < key * 0.9995**2 and bid_volume > size:
-                    
-                    short_success.append(key)
-
-                    failed = 0
-                    for key in short_keys:
-                        if key not in short_success:
-                            failed += 1
-
-                    print('- {entry}  {:06.2f} {:06.2f} {:09.2f} {:09.2f} {:08.2f} {:05.2f} {failed}'.format(entry=key, failed=failed, *short_entries[key]))
-
-        print(trades_count, len(long_success) + len(short_success), (len(long_entries) + len(short_entries)) - (len(long_success) + len(short_success)))
-
+    @staticmethod
+    def kde_bandwith_est(kde):
+        return 0
+        
     def process_trades(self):
 
-        depth = 4
-        tick_size = 0.1
+        # self.trades = self.trades[0:30]
 
-        previous_buy_amount, previous_sell_amount = 1, 1
-        buy_change, sell_change = 1, 1
+        with tqdm(total=len(self.trades)) as pbar:
 
-        entries = []
-        total = self.trades.length()
+            for file in self.trades:
 
-        df = pd.DataFrame(columns=['timestamp', 'price', 'amount', 'side'])
-        with tqdm(total=total) as pbar:
-
-            # order_book_keys = np.asarray(list(self.order_book.keys()))
-
-            for line in lzma.open(self.trades.files.pop(0), 'rb').readlines():
- 
-                trade = Trade(line)
-        
-                # index = np.argwhere(int(trade.timestamp) >= order_book_keys)
-                # if index.size > 0:
-                #     key = order_book_keys[index.size]
-                #     book = OrderBook(self.order_book[key])
-
-                timestamp = getattr(trade, 'timestamp')
-                price = getattr(trade, 'price')
-                amount = getattr(trade, 'amount')
-                side = getattr(trade, 'side')
-
-                # asks = getattr(book, 'asks')
-                # bids = getattr(book, 'bids')
-
-                df.loc[df.index.size] = [timestamp, price, amount, side]
-
+                self.df = pd.concat([self.df, pd.read_csv(file, header = 0, names = ['id', 'side', 'amount', 'price', 'timestamp'])], ignore_index = True)
+                
+                self.df['timestamp'] = self.df['timestamp'].astype(int)
+                self.df['price'] = self.df['price'].astype(float)
+                self.df['amount'] = self.df['amount'].astype(float)
+     
                 pbar.update(1)
 
-            df2: pd.DataFrame = df.groupby(['timestamp', 'side']).agg(avg_tx_size=('amount', np.mean), amount=('amount', np.sum), price=('price', np.mean)).reset_index()
-         
-            df2['timestamp_diff'] = (df2['timestamp'] - df2.shift(1)['timestamp']) 
-            df2['timestamp_diff_avg'] = df2.apply(lookback_window, values = df2['timestamp_diff'], method = 'mean', axis = 1).fillna(0)
+        self.df.sort_values(by=['id'])
+        self.df.fillna(0)
 
-            df2['log_returns'] = np.log(df2['price'] / df2.shift(1)['price'])
-            df2['sd'] = df2.apply(lookback_window, values = df2['log_returns'], method = 'std', axis = 1).fillna(0)
+        df2: pd.DataFrame = self.df.groupby(['timestamp', 'side']).agg(amount=('amount', np.sum), price=('price', np.mean)).reset_index()
 
-            df2['volatility'] = df2.apply(lambda row: row.sd * np.sqrt((60 / 86400) / 365), axis = 1).fillna(0)
+        df2.set_index('timestamp', inplace = True)
+        df2.index = pd.to_datetime(df2.index, utc = True, unit = 'ms')
 
-            df2['spread'] = df2.apply(lambda row: row.price * row.volatility * np.sqrt(row.avg_tx_size / row.amount), axis = 1).fillna(0)
+        seconds = 1800
 
-            df2.fillna(0)
-            df2.to_json('./introspect.json')
+        df2 = df2.resample(f'{seconds}S', kind = 'period', convention = 'start').agg(amount=('amount', np.sum), price=('price', np.mean)).dropna()
 
-            # df['bid_ask_spread'] = df.apply(lambda row: row.asks[0][0] - row.bids[0][0], axis = 1)
-            # df['ask_spread'] = df.apply(lambda row: row.asks[4][0] - row.asks[0][0], axis = 1)
-            # df['bid_spread'] = df.apply(lambda row: row.bids[0][0] - row.bids[4][0], axis = 1)
+        df2.loc[:,('r')] = (np.log(df2['price'] / df2['price'].shift(1))).fillna(0)
 
-            # df['ask_cum_volume'] = df.apply(lambda row: np.sum(np.asarray(row.asks)[:, 1]), axis = 1)
-            # df['bid_cum_volume'] = df.apply(lambda row: np.sum(np.asarray(row.bids)[:, 1]), axis = 1)
+        df2.loc[:,('mu')] = df2.apply(lookback_window, values = df2['r'], method = 'mean', axis = 1).fillna(1)
+        df2.loc[:,('sigma')] = df2.apply(lookback_window, values = df2['r'], method = 'std', axis = 1).fillna(0)
+        df2.loc[:,('sigma')] = df2.loc[:,('sigma')] * np.sqrt(seconds / 86400)
 
-            # df2: pd.DataFrame = df.groupby(['timestamp', 'side']).agg(avg_tx_size=('amount', np.mean), amount=('amount', np.sum), price=('price', np.mean), ask_cum_volume=('ask_cum_volume', np.mean), bid_cum_volume=('bid_cum_volume', np.mean)).reset_index()
-         
-            # df2['timestamp_diff'] = (df2['timestamp'] - df2.shift(1)['timestamp']) 
+        df2.loc[:,('p')] = df2.apply(gaussian_kernel, values = df2['r'], axis = 1)
 
-            # df2['timestamp_diff_avg'] = df2.apply(lookback_window, values = df2['timestamp_diff'], method = 'mean', axis = 1).fillna(0)
- 
-            # df2['sell_to_bid_cum'] = df2.apply(lambda row: row.amount / row.bid_cum_volume if row.side == 'sell' else row.amount / row.ask_cum_volume, axis = 1)
-            # df2['buy_to_ask_cum'] = df2.apply(lambda row: row.amount / row.bid_cum_volume if row.side == 'sell' else row.amount / row.ask_cum_volume, axis = 1)
-            
-            # df.fillna(0)
-            # df2.fillna(0)
+        print(df2.corr())
 
-            # print(df2)
-            # print('dataframe size {} bytes'.format(df.memory_usage().sum()))
+        print('\nsamples %i\n' % df2.index.size)
 
-            # print('time between trades {} {} {}'.format(df2['timestamp_diff'].min(), df2['timestamp_diff'].max(), df2['timestamp_diff'].mean()))
+        # jb, p = jarque_bera(df2['r'])
+        # print('jarque bera %.9f' % jb)
+        # print('p-value %.9f' % p)
+        print('skew %.9f' % skew(df2['r']))
 
-            # print('volatility {} {} {}'.format(df2['volatility'].min(), df2['volatility'].max(), df2['volatility'].mean()))
-            # print('spread {} {} {}'.format(df2['spread'].min(), df2['spread'].max(), df2['spread'].mean()))
+        mse = ((df2['r'] - df2['p'])**2).mean(axis = None).real
+        print('\nmse {}'.format(mse))
 
-            # print('bid ask spread {} {} {}'.format(df['bid_ask_spread'].min(), df['bid_ask_spread'].max(), df['bid_ask_spread'].mean()))
+        df2['accuracy'] = np.equal(np.sign(df2['p']), np.sign(df2['r']))
+        print('accuracy {}\n'.format(df2['accuracy'].sum() / df2['accuracy'].count()))
 
-            # print('ask spread {} {} {}'.format(df['ask_spread'].min(), df['ask_spread'].max(), df['ask_spread'].mean()))
-            # print('bid spread {} {} {}'.format(df['bid_spread'].min(), df['bid_spread'].max(), df['bid_spread'].mean()))
+        df2.drop(['accuracy'], axis = 1, inplace = True)
 
-            # print('ask cum volume {} {} {}'.format(df['ask_cum_volume'].min(), df['ask_cum_volume'].max(), df['ask_cum_volume'].mean()))
-            # print('bid cum volume {} {} {}'.format(df['bid_cum_volume'].min(), df['bid_cum_volume'].max(), df['bid_cum_volume'].mean()))
+        print(df2.tail(10).to_string())
 
-            # print('sell volume {} {} {}'.format(df2[df2['side'] == 'sell']['amount'].min(), df2[df2['side'] == 'sell']['amount'].max(), df2[df2['side'] == 'sell']['amount'].mean()))
-            # print('buy volume {} {} {}'.format(df2[df2['side'] == 'buy']['amount'].min(), df2[df2['side'] == 'buy']['amount'].max(), df2[df2['side'] == 'buy']['amount'].mean()))
-            
-            # print('sell / bid cum {} {} {}'.format(df2['sell_to_bid_cum'].min(), df2['sell_to_bid_cum'].max(), df2['sell_to_bid_cum'].mean()))
-            # print('buy / ask cum {} {} {}'.format(df2['buy_to_ask_cum'].min(), df2['buy_to_ask_cum'].max(), df2['buy_to_ask_cum'].mean()))
+        # df2['r'].plot.hist(bins = 'fd', density = True, alpha = 0.5)
+        # df2['r'].plot.kde()
 
-                # ask_price = getattr(book, 'asks')[0][0]
-                # bid_price = getattr(book, 'bids')[0][0]
-                # ask_spread = getattr(book, 'asks')[depth][0] - ask_price
-                # bid_spread = bid_price - getattr(book, 'bids')[depth][0]
-                # best_ask_volume = getattr(book, 'asks')[0][1]
-                # best_bid_volume = getattr(book, 'bids')[0][1]
-                # cum_ask_volume = np.sum(np.asarray(getattr(book, 'asks'))[:, 1]) 
-                # cum_bid_volume = np.sum(np.asarray(getattr(book, 'bids'))[:, 1]) 
+        # df2['p'].plot.hist(bins = 'fd', density = True)
 
-                # roc = 0
-                # if side == 'buy':
-                #     buy_change = amount - previous_buy_amount
-                #     if buy_change == 0:
-                #         buy_change = 1
-                #     roc =  buy_change / sell_change
+        # mu, std = norm.fit(df2['r']) 
+        # xmin, xmax = plt.xlim()
+        # x = np.linspace(xmin, xmax, df2['r'].index.size)
+        # pdf = norm.pdf(x, mu, std)
+        # plt.plot(x, pdf, color = 'red')
 
-                # if side == 'sell':
-                #     sell_change = amount - previous_sell_amount
-                #     if sell_change == 0:
-                #         sell_change = 1
-                #     roc =  buy_change / sell_change
+        # mu, std = cauchy.fit(df2['r']) 
+        # xmin, xmax = plt.xlim()
+        # x = np.linspace(xmin, xmax, df2['r'].index.size)
+        # pdf = cauchy.pdf(x, mu, std)
+        # plt.plot(x, pdf, color = 'blue')
 
-                # mid = ask_price + bid_price / 2
-
-                # fee_spread = ((mid * 1.0005**2) - mid)
-
-                # cum_ask_volume = '{:09.2f}'.format(cum_ask_volume)
-                # cum_bid_volume = '{:09.2f}'.format(cum_bid_volume)
-
-                # if price in entries:
-                #     price = PURPLE + str(price) + END
-        
-                # if 'buy' in side and price not in entries:
-                #     price = GREEN + str(price) + END
-
-                # if 'sell' in side and price not in entries:
-                #     price = RED + str(price) + END
-
-                # if (ask_spread) > fee_spread and (bid_spread) < fee_spread * 0.2:
-                #     ask_spread = BLUE + '{:06.2f}'.format(ask_spread) + END
-                #     bid_spread = BLUE + '{:06.2f}'.format(bid_spread) + END
-                # else:
-                #     ask_spread = '{:06.2f}'.format(ask_spread)
-                #     bid_spread = '{:06.2f}'.format(bid_spread)
-
-                # if best_ask_volume > 1000:
-                #     best_ask_volume = MAGENTA + '{:08.2f}'.format(best_ask_volume) + END
-                # else:
-                #     best_ask_volume = '{:08.2f}'.format(best_ask_volume)
-
-                # if best_bid_volume > 1000:
-                #     best_bid_volume = MAGENTA + '{:08.2f}'.format(best_bid_volume) + END
-                # else:
-                #     best_bid_volume = '{:08.2f}'.format(best_bid_volume)
-
-                # if amount >= 1000:
-                #     amount = MAGENTA + '{:07.2f}'.format(amount) + END
-                # else:
-                #     amount = '{:07.2f}'.format(amount)
-
-                # if roc > 10:
-                #     roc = PURPLE + '{:05.2f}'.format(roc) + END
-                # else:
-                #     roc = '{:06.2f}'.format(roc)
-
-                # asks = list(np.asarray(getattr(book, 'asks'))[:5][:, 0])
-                # bids = list(np.asarray(getattr(book, 'bids'))[:5][:, 0])
-                # for i in range(0, len(asks)):
-
-                #     if type(asks[i]) == 'str' or type(bids[i]) == 'str':
-                #         continue
-
-                #     if float(asks[i]) in entries:
-                #         asks[i] = PURPLE + str(asks[i]) + END
-
-                #     if float(bids[i]) in entries:
-                #         bids[i] = PURPLE + str(bids[i]) + END
-
-                # out = '{} - {} {} {} {} {} - {} {} {} {} {} - {} {} - {} {} - {} {} - {} {} - {}'.format(
-                #     self.datetime(trade.timestamp / 1000), 
-                #     asks[4], 
-                #     asks[3], 
-                #     asks[2], 
-                #     asks[1], 
-                #     asks[0], 
-                #     bids[0], 
-                #     bids[1], 
-                #     bids[2], 
-                #     bids[3], 
-                #     bids[4], 
-                #     cum_ask_volume,
-                #     best_ask_volume, 
-                #     price, 
-                #     amount, 
-                #     best_bid_volume, 
-                #     cum_bid_volume,
-                #     ask_spread, 
-                #     bid_spread, 
-                #     roc,
-                # )
-
-                # print(out)
-        return total
+        # plt.xlabel('Returns')
+        # plt.legend(['historical', 'p'])
+        # plt.show()
 
     def dump_orders(self):
+
+        import json
 
         orders = []
 
@@ -584,66 +351,18 @@ class Introspect:
         for value in values:
             print({k: value[k] for k in value.keys()})
 
-introspect = Introspect(exchange = 'okx')
+def main():
+    introspect = Introspect(exchange = 'okx')
 
-# print(introspect.dump_position())
+    try:
 
-try:
-    n_tic = time.process_time()
-    total = introspect.process_trades()
-    print('completed {} in {} ms'.format(total, 1000 * (time.process_time() - n_tic)))
-except Exception as e:
-    print(e.with_traceback())
+        introspect.dump_orders()
+        
+        # n_tic = time.time() * 1000
+        # introspect.process_trades()
+        # print('completed in {} ms'.format((time.time() * 1000) - n_tic))
+    except Exception as e:
+        print(e, traceback.print_tb(e.__traceback__))
 
-# import pandas as pd
-# import numpy as np
-
-# df = pd.DataFrame(columns=['timestamp', 'amount', 'price', 'side', 'ask_cum_volume', 'bid_cum_volume'])
-# df.loc[len(df.index)] = [1, 1, 40000, 'buy', 10, 20]
-# df.loc[len(df.index)] = [1, 2, 40001, 'sell', 10, 20]
-# df.loc[len(df.index)] = [2, 3, 45000, 'sell', 10, 20]
-# df.loc[len(df.index)] = [3, 3, 45000, 'sell', 10, 20]
-# df.loc[len(df.index)] = [4, 3, 45000, 'sell', 10, 20]
-
-# df2: pd.DataFrame = df.groupby(['timestamp', 'side']).agg(avg_tx_size=('amount', np.mean), amount=('amount', np.sum), price=('price', 'first'), ask_cum_volume=('ask_cum_volume', 'first'), bid_cum_volume=('bid_cum_volume', 'first')).reset_index()
-
-# df2['sd'] = df2.apply(lookback_window, values = df2['price'], method = 'std', axis = 1).fillna(0)
-
-# df2['volatility'] = df2.apply(lambda row: row.price * row.sd * np.sqrt(1 / (df2['price'].index.get_loc(row.name) + 1)), axis = 1).fillna(0)
-
-# print(df2.fillna(0))
-
-# import struct, sys, time
-
-# timestamp = int(time.time())
-
-# bids = [[int(40000.45 * 1000), int(100.5 * 1000)]]
-# asks = [[int(50000.45 * 1000), int(200.5 * 1000)]]
-
-# bytes = b''
-# bytes += struct.pack('i', timestamp)
-
-# b = b''
-# for arr in bids:
-#     packed = struct.pack('i' * len(arr) , *arr)
-#     b += packed
-
-# a = b''
-# for arr in asks:
-#     packed = struct.pack('i' * len(arr) , *arr)
-#     a += packed
-
-# index = struct.pack('i', int(len(bids) + 2))
-
-# bytes += index + b + a
-# print(len(bytes))
-
-# array = struct.unpack('i' * (len(bytes) // 4), bytes)
-# import json
-
-# df = pd.read_json('./introspect.json')
-
-# print(df.to_string())
-     
-
-
+if __name__ == "__main__":
+    main() 

@@ -14,7 +14,7 @@ def delay_message(msg: str) -> bool:
     for i in range(0, len(queue)):
 
         (sms, timestamp) = queue[i]
-        if msg == sms and int(time.time() * 1000) - timestamp < 3600000:
+        if msg == sms and int(time.time()) - timestamp < 3600:
             delay = True
 
     return delay
@@ -28,7 +28,7 @@ def update_queue(msg: str) -> None:
             queue.pop(i)
             return
 
-    queue.append((msg, int(time.time() * 1000)))
+    queue.append((msg, int(time.time())))
 
 def exception(server: smtplib.SMTP, recipients: list, msg: str):
     msg = MIMEText(msg)
@@ -46,6 +46,7 @@ def profits(server: smtplib.SMTP, recipients: list, msg: str):
 
 def send_sms(type: str, msg: str) -> None:
     try:
+
         if not delay_message(msg):
             with smtplib.SMTP("smtp.gmail.com", 587) as server:
 
@@ -54,7 +55,7 @@ def send_sms(type: str, msg: str) -> None:
                 server.login('botti.notification@gmail.com', 'yygakfowwmpogiuy')
                 
                 recipients = None
-                if type == 'exception' or type == 'earlyexit' or type == 'system-status':
+                if type == 'exception' or type == 'system-status':
                     recipients = ['9286323030@vtext.com']
 
                 if type == 'profits':
@@ -64,13 +65,10 @@ def send_sms(type: str, msg: str) -> None:
                 msg['From'] = 'botti.notification@gmail.com'
                 msg['To'] = ', '.join(recipients)
 
-                server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
+                # server.sendmail('botti.notification@gmail.com', recipients, msg.as_string())
                 server.close()
 
                 update_queue(msg)
 
     except Exception as e:
-        logger.error('failed sending sms {}'.format(str(e)))
-        pass
-
-    
+        logger.error('failed sending sms {}'.format(str(e)))    

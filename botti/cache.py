@@ -22,68 +22,59 @@ class Cache:
             log_exception(e)
 
     def init(self) -> None:
+        
         try:
-            self.cur.execute('''CREATE TABLE if not exists orders (id TEXT DEFAULT NULL, clientOrderId TEXT, datetime TEXT, timestamp INTEGER DEFAULT 0, lastTradeTimestamp INTEGER DEFAULT 0, status TEXT, symbol TEXT, type TEXT, timeInForce TEXT, postOnly INTEGER, side TEXT, price REAL DEFAULT 0, stopPrice REAL DEFAULT 0, average REAL DEFAULT 0, amount REAL DEFAULT 0, filled REAL DEFAULT 0, remaining REAL DEFAULT 0, cost REAL DEFAULT 0, info TEXT, fees TEXT, fee TEXT, trades TEXT);''')
+            # has unique constraint of UNIQUE(id, side, filled, remaining)
+            self.cur.execute('''CREATE TABLE if not exists orders (id TEXT DEFAULT NULL, clientOrderId TEXT, datetime TEXT, timestamp INTEGER DEFAULT 0, lastTradeTimestamp INTEGER DEFAULT 0, status TEXT, symbol TEXT, type TEXT, timeInForce TEXT, postOnly INTEGER, side TEXT, price REAL DEFAULT 0, stopPrice REAL DEFAULT 0, average REAL DEFAULT 0, amount REAL DEFAULT 0, filled REAL DEFAULT 0, remaining REAL DEFAULT 0, cost REAL DEFAULT 0, info TEXT, fees TEXT, fee TEXT, trades TEXT, UNIQUE(id, side, filled, remaining));''')
             self.cur.execute('''CREATE TABLE if not exists position (id TEXT DEFAULT NULL, timestamp INTEGER DEFAULT 0, symbol TEXT DEFAULT NULL, side TEXT, open_amount REAL DEFAULT 0, pending_open_amount REAL DEFAULT 0, open_avg REAL DEFAULT 0, close_amount REAL DEFAULT 0, pending_close_amount REAL DEFAULT 0, close_avg REAL DEFAULT 0, status INTEGER, state INTEGER, triggered INTEGER DEFAULT 0);''')
             self.con.commit()
         except Exception as e:
             log_exception(e)
 
-    def insert_order(self, order: dict) -> None:
+    def insert_order(self, order: dict) -> bool:
 
         try:
 
             # make copy otherwise it edits the actual cache
             order = order.copy()
-
-            # FIXME: ccxt isnt adding this itself
-            # this also may be wrong from ccxt perspective
-            trade = order.get('info').get('tradeId')
-            if trade.isnumeric():
-                order['trades'] = [trade]
                 
             for k in order.keys():
                 if type(order[k]) == dict or type(order[k]) == list:
                     order[k] = json.dumps(order[k])
 
-            columns = ', '.join("`" + str(x).replace('/', '_') + "`" for x in order.keys())
-            values = ', '.join("'" + str(x).replace('/', '_') + "'" for x in order.values())
+            columns = ', '.join("`" + str(x) + "`" for x in order.keys())
+            values = ', '.join("'" + str(x) + "'" for x in order.values())
 
             insert = 'INSERT INTO %s ( %s ) VALUES ( %s );' % ('orders', columns, values)
 
             self.cur.execute(insert)
             self.con.commit()
+            
+            return True
+
+        except sqlite3.IntegrityError:
+            pass
         except Exception as e:
             log_exception(e)
-            print(e)
 
-    def fetch_order(self) -> dict:
+        return False
+
+    def fetch_order(self, symbol) -> dict:
         try: 
 
-            order = {}
-
-            values = self.cur.execute('''SELECT * FROM orders ORDER BY timestamp DESC, CASE WHEN status = 'open' THEN 1 WHEN status = 'closed' THEN 2 END DESC;''').fetchone()
-            if values is None:
-                return order
-
-            for k in values.keys():
-
-                try:
-                    order[k] = json.loads(values[k])
-                except Exception:
-                    order[k] = values[k]
-
-            return order
+            arg = '''SELECT * FROM orders WHERE symbol = '{}' ORDER BY timestamp DESC, CASE WHEN status = 'open' THEN 1 WHEN status = 'closed' THEN 2 END DESC;'''.format(symbol)
+            values = self.cur.execute(arg).fetchone()
+            return {k: values[k] for k in values.keys()} if values else {}
 
         except Exception as e:
             log_exception(e)
 
-    def fetch_orders(self, id) -> dict:
+    def fetch_orders(self, symbol, id) -> dict:
         try: 
 
             orders = []
 
-            select = '''SELECT * FROM orders WHERE id = '{id}' ORDER BY timestamp DESC, filled ASC;'''.format(id=id)
+            select = '''SELECT * FROM orders WHERE symbol = '{}' AND id = '{}' ORDER BY timestamp DESC, filled ASC;'''.format(symbol, id)
 
             values = self.cur.execute(select).fetchall()
             if values is None:
@@ -128,8 +119,8 @@ class Cache:
             self.cur.execute(insert)
             self.con.commit()
         except Exception as e:
-            log_exception(e)
             print(e)
+            log_exception(e)
 
     def update(self, id: str, position: dict) -> None:
 
@@ -156,7 +147,6 @@ class Cache:
             self.con.commit()
         except Exception as e:
             log_exception(e)
-            print(e)
 
     def remove(self, table: str, id: str) -> None:
         try:
@@ -183,20 +173,18 @@ class Cache:
 
         logger.info('flushed and closed sqlite connection')
 
-    @property
-    # returns currently opened trade if any
-    def position(self) -> Position:
+    def current_position(self, symbol) -> Position:
         try: 
-            values = self.cur.execute('''SELECT * FROM position WHERE status = 1 OR status = 2;''').fetchone()
+            arg = '''SELECT * FROM position WHERE symbol = '{}' AND (status = 1 OR status = 2);'''.format(symbol)
+            values = self.cur.execute(arg).fetchone()
             return Position({k: values[k] for k in values.keys()}) if values else Position({})
         except Exception as e:
             log_exception(e)
 
-    @property
-    # returns last open trade excluding currectly open trade if any
-    def last(self) -> Position:
+    def last_position(self, symbol) -> Position:
         try: 
-            values = self.cur.execute('''SELECT * FROM position WHERE status = 3 ORDER BY timestamp DESC;''').fetchone()
+            arg = '''SELECT * FROM position WHERE symbol = '{}' AND status = 3 ORDER BY timestamp DESC;'''.format(symbol)
+            values = self.cur.execute(arg).fetchone()
             return Position({k: values[k] for k in values.keys()}) if values else Position({})
         except Exception as e:
             log_exception(e)

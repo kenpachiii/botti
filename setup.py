@@ -12,7 +12,13 @@ setup(
         # from requirements.txt
         'ccxtpro',
         'numpy',
-        'asyncio'
+        'asyncio',
+        'pandas',
+        'joblib',
+        'dask',
+        'keras',
+        'sklearn',
+        'statsmodels'
     ],
 )
 

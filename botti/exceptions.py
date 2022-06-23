@@ -6,7 +6,7 @@ from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
 
-def log_exception(e: Exception, id = None) -> None:
+def log_exception(e: Exception, id = None, symbol = None) -> None:
 
     frame = None
 
