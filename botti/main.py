@@ -83,7 +83,7 @@ def fetch_history(exchange: Exchange, symbol: str, days: int = 2) -> dd.DataFram
 
     return ddf
 
-def symbol_loop(exchange: Exchange, symbol: str, leverage: int) -> list | None:
+def symbol_loop(exchange: Exchange, symbol: str, leverage: int) -> list:
 
     history: dd.DataFrame = fetch_history(exchange, symbol, days = 4).compute().reset_index()
  
