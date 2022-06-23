@@ -41,6 +41,7 @@ logger = logging.getLogger('botti')
 
 def read_file(file: str) -> dd.DataFrame:
     ddf: dd.DataFrame = dd.read_csv(file, header = 0, names = ['id', 'side', 'amount', 'price', 'timestamp'], blocksize = None)
+    ddf = ddf.astype({ 'id': str,'side': str, 'amount': float, 'price': float, 'timestamp': int })
     return ddf
 
 def build_file_urls(exchange: Exchange, symbol: str) -> tuple:
@@ -58,7 +59,7 @@ def fetch_history(exchange: Exchange, symbol: str, days: int = 2) -> dd.DataFram
     files: list = files[-days:]
 
     ddf: dd.DataFrame = dd.concat([read_file(os.path.join(url, file)) for file in files])
-    ddf: dd.DataFrame = ddf.groupby(by=['timestamp', 'side']).agg({ 'price': np.mean, 'amount': np.sum }, split_out = len(files)).reset_index()
+    ddf: dd.DataFrame = ddf.groupby(by=['timestamp', 'side']).aggregate({ 'price': np.mean, 'amount': np.sum }, split_out = len(files)).reset_index()
 
     ddf: dd.DataFrame = ddf.persist()
 
