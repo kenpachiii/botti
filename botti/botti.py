@@ -8,7 +8,6 @@ import os
 import joblib
 import multiprocessing as mp
 import datetime
-import threading
 
 from keras.models import load_model
 from sklearn.metrics import mean_squared_error
@@ -40,14 +39,6 @@ class Botti:
         self.history: pd.DataFrame = kwargs.get('history')
         self.model = load_model('model')
         self.scalar: MinMaxScaler = joblib.load('model/assets/model.scalar')
-
-        strategy_thread = threading.Thread(target = self.strategy, args=())
-        strategy_thread.daemon = True
-        strategy_thread.start()
-
-        consumer_thread = threading.Thread(target = self.consumer, args=())
-        consumer_thread.daemon = True
-        consumer_thread.start()
 
     @staticmethod
     def seconds_until_30_minute():
@@ -171,6 +162,8 @@ class Botti:
 
         for order in orders:
 
+            print('order', [order.get('side'), order.get('filled'), order.get('remaining')])
+
             if self.cache.insert_order(order):
 
                 if order.get('status') in ['canceled', 'expired', 'rejected']:
@@ -265,15 +258,14 @@ class Botti:
         except Exception as e:
             log_exception(e, self.exchange.id, self.symbol)
   
-    def position_size(self, side: str = 'long') -> float:
+    async def position_size(self, side: str = 'long') -> float:
 
         response: dict = None
 
         try:
             params = { 'instId': self.exchange.market_id(self.symbol), 'tdMode': 'cross', 'ccy': self.exchange.markets.get(self.symbol).get('base'), 'leverage': self.leverage }
-            
-            response = self.exchange.asyncio_loop.run_until_complete(self.exchange.private_get_account_max_size(params))
-            
+            response = await self.exchange.private_get_account_max_size(params)
+
             data = response.get('data')[0]
             sz = data.get('maxBuy') if 'long' in side else data.get('maxSell')
 
@@ -283,18 +275,19 @@ class Botti:
 
         return 1 # default size if exception is thrown 
  
-    def consumer(self):
+    async def consumer(self):
 
         while True:
 
+            await asyncio.sleep(0)
             if not self.queue.empty():
                 try:
                     (command, state, args) = self.queue.get_nowait()
                     if command == 'create':
-                        self.exchange.asyncio_loop.run_until_complete(getattr(self.exchange, 'createOrder')(*args))
+                        await getattr(self.exchange, 'createOrder')(*args)
                     
                     if command == 'cancel':
-                        self.exchange.asyncio_loop.run_until_complete(getattr(self.exchange, 'cancelOrder')(*args))
+                        await getattr(self.exchange, 'cancelOrder')(*args)
 
                     self.queue.task_done()
 
@@ -340,6 +333,7 @@ class Botti:
 
         while True:
 
+            await asyncio.sleep(0)
             if self.symbol not in self.exchange.orderbooks:
                 continue
 
@@ -367,7 +361,7 @@ class Botti:
                 if self.cache.current_position(self.symbol).status is PositionStatus.NONE:
 
                     # model is trained on 30-minute intervals, which means a new prediction can only be obtained every 30-minutes.
-                    time.sleep(self.seconds_until_30_minute())
+                    await asyncio.sleep(self.seconds_until_30_minute())
 
                     side = self.trailing_entry()
                     if side:
@@ -461,6 +455,7 @@ class Botti:
 
             try:
                 orders: list = await getattr(self.exchange, 'watchOrders')(self.symbol)
+                print(orders)
                 self.process_orders(orders)
             except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
                 log_exception(e, self.exchange.id, self.symbol)
@@ -471,14 +466,19 @@ class Botti:
 
         try:
 
+            # make sure leverage is updated
+            self.exchange.asyncio_loop.run_until_complete(self.set_leverage())
+
             # set trading fee
             self.set_trading_fee()
 
+            # required to repopulate an already opened position
+            self.exchange.asyncio_loop.run_until_complete(self.orders_history())
             return [
-                self.set_leverage(), # make sure leverage is updated
-                self.orders_history(), # required to repopulate an already opened position
                 self.watch_orders(),
-                self.watch_order_book()
+                self.watch_order_book(),
+                self.consumer(),
+                self.strategy()
             ]
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:

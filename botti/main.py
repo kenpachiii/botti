@@ -59,7 +59,7 @@ def fetch_history(exchange: Exchange, symbol: str, days: int = 2) -> dd.DataFram
     files: list = files[-days:]
 
     ddf: dd.DataFrame = dd.concat([read_file(os.path.join(url, file)) for file in files])
-    ddf: dd.DataFrame = ddf.groupby(by=['timestamp', 'side']).aggregate({ 'price': np.mean, 'amount': np.sum }, split_out = len(files)).reset_index()
+    ddf: dd.DataFrame = ddf.groupby(by=['timestamp', 'side']).agg({ 'price': np.mean, 'amount': np.sum }, split_out = len(files)).reset_index()
 
     ddf: dd.DataFrame = ddf.persist()
 
@@ -92,7 +92,7 @@ def symbol_loop(exchange: Exchange, symbol: str, leverage: int) -> list:
 
     return botti.run()
 
-async def main():
+def main():
 
     setup_logging()
 
@@ -105,7 +105,12 @@ async def main():
 
         args = parser.parse_args()
 
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.set_debug(True)
+
         exchange: Exchange = Exchange({
+            # 'asyncio_loop': loop,
             'newUpdates': True,
             'options': { 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }}
         })
@@ -115,12 +120,12 @@ async def main():
 
         exchange.set_sandbox_mode(keys[args.keys].get('test'))
 
-        loops = [exchange.system_status(), exchange.load_markets(reload=False)]
-        await asyncio.gather(*loops)
+        loop.run_until_complete(exchange.system_status())
+        loop.run_until_complete(exchange.load_markets(reload=False))
         
         loops = list(itertools.chain(*[symbol_loop(exchange, symbol, args.leverage) for symbol in args.symbols]))
-        await asyncio.gather(*loops)
-        await exchange.close()
+        loop.run_until_complete(asyncio.gather(*loops))
+        loop.run_until_complete(exchange.close())
 
     except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
         print(e)
