@@ -10,7 +10,7 @@ import datetime
 import json
 import requests
 
-from keras.models import load_model
+from keras.models import load_model, Model
 from sklearn.preprocessing import MinMaxScaler
 from statsmodels.tsa.api import SimpleExpSmoothing
 
@@ -33,7 +33,7 @@ class Botti:
         self.exchange: Exchange = ccxtpro.okx
 
         self.history: pd.DataFrame = kwargs.get('history')
-        self.model = load_model('model')
+        self.model: Model = load_model('model')
         self.scalar: MinMaxScaler = joblib.load('model/assets/model.scalar')
 
         self.position = {}
@@ -138,10 +138,6 @@ class Botti:
             self.history: pd.DataFrame = pd.concat([self.history, pd.DataFrame(trades, columns = ['amount', 'price', 'timestamp'])], ignore_index = True)
             self.history.reset_index(inplace = True, drop = True)
 
-            if self.history.shape[0] < 64:
-                logger.info('{} {} past trades - not enough trades. have {} need {}'.format(self.exchange.id, self.symbol, self.history.shape[0], 64))
-                return []
-
             return self.transform(self.history.copy())[-size:]
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -149,24 +145,28 @@ class Botti:
 
     def predict(self):
 
-        trades = self.past_trades(64)
-        if trades.shape[0] > 0:
+        size: int = self.model.input_shape[1]
 
-            trades = self.normalize(trades)
+        trades: np.ndarray = self.past_trades(size)
+        if trades.shape[0] == size:
 
-            y_pred = self.denormalize(
+            trades: np.ndarray = self.normalize(trades)
+
+            y_pred: np.ndarray = self.denormalize(
                 self.model.predict(np.expand_dims(trades, axis = 0), workers = mp.cpu_count(), use_multiprocessing = True, verbose = '0')
             )[:, 0][0]
 
             return y_pred
 
+        logger.info('{} {} predict - not enough trades. have {} need {}'.format(self.exchange.id, self.symbol, trades.shape[0], size))
+
         return 0
 
     def trailing_entry(self) -> str:
 
-        y_pred = self.predict()
+        y_pred: np.ndarray = self.predict()
 
-        direction = 'long' if np.sign(y_pred) == 1 else 'short'
+        direction: str = 'long' if np.sign(y_pred) == 1 else 'short'
         if direction == 'long' and y_pred >= np.square(1 + 0.0005) - 1:
 
             logger.info('{} {} trailing entry - found long entry {}'.format(
