@@ -41,16 +41,6 @@ keys = {
 
 logger = logging.getLogger('botti')
 
-def read_file(file: str) -> dd.DataFrame:
-    df: dd.DataFrame = pd.read_csv(file, header = 0, names = ['id', 'side', 'amount', 'price', 'timestamp'], chunksize = 1024 * 1024).read()
-    df = df.astype({ 'id': str,'side': str, 'amount': float, 'price': float, 'timestamp': int })
-    return df
-
-def build_file_urls(exchange: Exchange, symbol: str) -> tuple:
-    url = os.path.join('http://localhost:8000', exchange.id, 'trades', exchange.market_id(symbol))
-    req = requests.get(os.path.join(url, 'index'))
-    return (url, [line.decode() for line in req.iter_lines()])
-
 def fetch_history(exchange: Exchange, symbol: str) -> pd.DataFrame:
     
     url = os.path.join('http://localhost:8000', exchange.id, 'trades', exchange.market_id(symbol))
@@ -65,7 +55,7 @@ def fetch_history(exchange: Exchange, symbol: str) -> pd.DataFrame:
 
 async def symbol_loop(exchange: Exchange, symbol: str, leverage: int):
 
-    history: dd.DataFrame = fetch_history(exchange, symbol)
+    history: dd.DataFrame = fetch_history(exchange, symbol)[:88]
  
     botti: Botti = Botti(symbol = symbol, leverage = leverage, history = history)
     setattr(botti, 'exchange', exchange)
@@ -77,8 +67,6 @@ async def main():
     setup_logging()
 
     try:
-
-        print(os.getpid())
 
         parser = argparse.ArgumentParser(description = 'Botti trading bot.')
         parser.add_argument('--symbols', type = str, nargs = '+', help = 'symbol to trade', required = True)
@@ -113,4 +101,6 @@ async def main():
     except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
         print(e)
         log_exception(e, exchange.id)
+
+        await exchange.close()
 

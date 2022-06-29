@@ -261,6 +261,8 @@ class Botti:
                             self.exchange.orders.append(order)
 
             except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+
+                print(e)
                 
                 from ccxt.base.errors import InsufficientFunds, InvalidOrder
 
