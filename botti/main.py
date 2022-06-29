@@ -6,6 +6,8 @@ import os
 import numpy as np
 import datetime
 import time
+import json
+import pandas as pd 
 
 import dask.dataframe as dd
 import ccxtpro
@@ -40,79 +42,59 @@ keys = {
 logger = logging.getLogger('botti')
 
 def read_file(file: str) -> dd.DataFrame:
-    ddf: dd.DataFrame = dd.read_csv(file, header = 0, names = ['id', 'side', 'amount', 'price', 'timestamp'], blocksize = None)
-    ddf = ddf.astype({ 'id': str,'side': str, 'amount': float, 'price': float, 'timestamp': int })
-    return ddf
+    df: dd.DataFrame = pd.read_csv(file, header = 0, names = ['id', 'side', 'amount', 'price', 'timestamp'], chunksize = 1024 * 1024).read()
+    df = df.astype({ 'id': str,'side': str, 'amount': float, 'price': float, 'timestamp': int })
+    return df
 
 def build_file_urls(exchange: Exchange, symbol: str) -> tuple:
     url = os.path.join('http://localhost:8000', exchange.id, 'trades', exchange.market_id(symbol))
     req = requests.get(os.path.join(url, 'index'))
     return (url, [line.decode() for line in req.iter_lines()])
 
-def fetch_history(exchange: Exchange, symbol: str, days: int = 2) -> dd.DataFrame:
-
-    ddf: dd.DataFrame = None
+def fetch_history(exchange: Exchange, symbol: str) -> pd.DataFrame:
     
-    url, files = build_file_urls(exchange, symbol)
-    files.sort()
+    url = os.path.join('http://localhost:8000', exchange.id, 'trades', exchange.market_id(symbol))
+    trades = json.loads(requests.get(url).text)
 
-    files: list = files[-days:]
+    df: pd.DataFrame = pd.DataFrame(trades, columns = ['amount', 'price', 'timestamp'])
+    df = df.astype({ 'amount': float, 'price': float, 'timestamp': int })
 
-    ddf: dd.DataFrame = dd.concat([read_file(os.path.join(url, file)) for file in files])
-    ddf: dd.DataFrame = ddf.groupby(by=['timestamp', 'side']).agg({ 'price': np.mean, 'amount': np.sum }, split_out = len(files)).reset_index()
+    logger.info(f'{exchange.id} {symbol} - loaded - {df.shape[0]}')
 
-    ddf: dd.DataFrame = ddf.persist()
+    return df
 
-    ddf: dd.DataFrame = ddf.set_index('timestamp').repartition(npartitions = len(files))
-    ddf.index = dd.to_datetime(ddf.index, utc = True, unit = 'ms')
+async def symbol_loop(exchange: Exchange, symbol: str, leverage: int):
 
-    ddf: dd.DataFrame = ddf.persist()
-
-    ddf_buy: dd.DataFrame = ddf[ddf.side == 'BUY']
-    ddf_sell: dd.DataFrame = ddf[ddf.side == 'SELL']
-
-    ddf_buy: dd.DataFrame = ddf_buy.resample(f'1800S').agg({ 'price': np.mean, 'amount': np.sum }).dropna()
-    ddf_sell: dd.DataFrame = ddf_sell.resample(f'1800S').agg({ 'price': np.mean, 'amount': np.sum }).dropna()
-
-    ddf: dd.DataFrame = ddf.persist()
-
-    ddf: dd.DataFrame = dd.concat([ddf_buy, ddf_sell])
-    ddf: dd.DataFrame = dd.from_pandas(ddf.compute().sort_index(), npartitions = ddf.npartitions)
-
-    logger.info(f'{exchange.id} {symbol} - loaded {[os.path.basename(file) for file in files]} - {ddf.compute().shape[0]}')
-
-    return ddf
-
-def symbol_loop(exchange: Exchange, symbol: str, leverage: int) -> list:
-
-    history: dd.DataFrame = fetch_history(exchange, symbol, days = 4).compute().reset_index()
+    history: dd.DataFrame = fetch_history(exchange, symbol)
  
     botti: Botti = Botti(symbol = symbol, leverage = leverage, history = history)
     setattr(botti, 'exchange', exchange)
 
-    return botti.run()
+    await botti.run()
 
-def main():
+async def main():
 
     setup_logging()
 
     try:
 
-        parser = argparse.ArgumentParser(description='Botti trading bot.')
-        parser.add_argument('--symbols', type=str, nargs='+', help='symbol to trade', required = True)
-        parser.add_argument('--leverage', type=int, help='leverage to use', required = True)
-        parser.add_argument('--keys', type=str, help='keys to use', required = True)
+        print(os.getpid())
+
+        parser = argparse.ArgumentParser(description = 'Botti trading bot.')
+        parser.add_argument('--symbols', type = str, nargs = '+', help = 'symbol to trade', required = True)
+        parser.add_argument('--leverage', type = int, help = 'leverage to use', required = True)
+        parser.add_argument('--keys', type = str, help = 'keys to use', required = True)
 
         args = parser.parse_args()
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.set_debug(True)
+        loop = asyncio.get_event_loop()
+        # loop.set_debug(True)
 
         exchange: Exchange = Exchange({
-            # 'asyncio_loop': loop,
+            # 'verbose': True,
+            'asyncio_loop': loop,
             'newUpdates': True,
-            'options': { 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }}
+            'options': { 'enableRateLimit': True, 'watchOrderBook': { 'depth': 'books' }}
         })
 
         for attr, value in keys[args.keys].items():
@@ -120,13 +102,15 @@ def main():
 
         exchange.set_sandbox_mode(keys[args.keys].get('test'))
 
-        loop.run_until_complete(exchange.system_status())
-        loop.run_until_complete(exchange.load_markets(reload=False))
+        await exchange.system_status()
+        await exchange.load_markets(reload = False)
         
-        loops = list(itertools.chain(*[symbol_loop(exchange, symbol, args.leverage) for symbol in args.symbols]))
-        loop.run_until_complete(asyncio.gather(*loops))
-        loop.run_until_complete(exchange.close())
+        loops = [symbol_loop(exchange, symbol, args.leverage) for symbol in args.symbols]
+
+        await asyncio.gather(*loops)
+        await exchange.close()
 
     except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
         print(e)
         log_exception(e, exchange.id)
+

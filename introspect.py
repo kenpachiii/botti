@@ -239,7 +239,7 @@ class Introspect:
         self.trades = glob.glob(os.path.join(path, 'trades', 'BTC-USDT-SWAP', '*'))
         self.trades.sort()
 
-        self.cache = Cache('botti.db')
+        self.cache = Cache('botti.db.test')
 
         self.df = pd.DataFrame(columns=['id', 'timestamp', 'price', 'amount', 'side'])
 
@@ -356,7 +356,19 @@ def main():
 
     try:
 
-        introspect.dump_orders()
+        order = { 'id': 0, 'side': 'buy', 'filled': 1, 'remaining': 1, 'symbol': 'BTC/USD:BTC' }
+        print(introspect.cache.insert_order(order))
+
+        order = { 'id': 0, 'side': 'buy', 'filled': 2, 'remaining': 0, 'symbol': 'BTC/USD:BTC' }
+        print(introspect.cache.insert_order(order))
+
+        order = { 'id': 0, 'side': 'buy', 'filled': 2, 'remaining': 0, 'symbol': 'BTC/USD:BTC' }
+        print(introspect.cache.insert_order(order))
+
+        order = { 'id': 1, 'side': 'buy', 'filled': 2, 'remaining': 0, 'symbol': 'BTC/USD:BTC' }
+        print(introspect.cache.insert_order(order))
+
+        print(introspect.cache.fetch_order('BTC/USD:BTC'))
         
         # n_tic = time.time() * 1000
         # introspect.process_trades()

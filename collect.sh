@@ -1,6 +1,6 @@
 #!/bin/bash
 
-symbol=BTC-USDT-SWAP 
+symbol=BTC-USD-SWAP 
 
 BASE=https://static.okx.com/cdn/okex/traderecords/trades/daily/
 DIRECTORY=./data/okx/trades/$symbol
