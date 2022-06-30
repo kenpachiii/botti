@@ -1,4 +1,3 @@
-from turtle import position
 import ccxtpro
 import logging
 import numpy as np
@@ -18,7 +17,6 @@ from statsmodels.tsa.api import SimpleExpSmoothing
 
 from botti.exceptions import log_exception
 from botti.exchange import Exchange
-from botti.sms import send_sms
 
 logger = logging.getLogger(__name__)
 
