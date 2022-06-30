@@ -1,3 +1,4 @@
+from turtle import position
 import ccxtpro
 import logging
 import numpy as np
@@ -9,6 +10,7 @@ import multiprocessing as mp
 import datetime
 import json
 import requests
+import time
 
 from keras.models import load_model, Model
 from sklearn.preprocessing import MinMaxScaler
@@ -42,7 +44,7 @@ class Botti:
         self.exchange.asyncio_loop.run_until_complete(self.cancel_orders())
 
     async def cancel_orders(self):
-        orders = await self.exchange.fetch_open_orders(self.symbol)
+        orders = await self.fetch_open_orders()
         ids = [self.exchange.safe_value(order, 'id') for order in orders]
 
         if len(ids) > 0:
@@ -53,49 +55,35 @@ class Botti:
         n = datetime.datetime.utcnow()
         return ((datetime.datetime.min - n) % datetime.timedelta(minutes = 30)).seconds 
 
-    def best_bid(self):
+    async def best_bid(self):
 
-        orderbooks = getattr(self.exchange, 'orderbooks')
-        orderbooks = self.exchange.safe_value(orderbooks, self.symbol, {})
+        orderbooks = await self.fetch_l2_order_book()
+
         bids = self.exchange.safe_value(orderbooks, 'bids', [])
         best_bid = self.exchange.safe_value(bids, 0, [])
 
         return self.exchange.safe_value(best_bid, 0, 0)
 
-    def best_ask(self):
+    async def best_ask(self):
 
-        orderbooks = getattr(self.exchange, 'orderbooks')
-        orderbooks = self.exchange.safe_value(orderbooks, self.symbol, {})
+        orderbooks = await self.fetch_l2_order_book()
+
         asks = self.exchange.safe_value(orderbooks, 'asks', [])
         best_ask = self.exchange.safe_value(asks, 0, [])
 
         return self.exchange.safe_value(best_ask, 0, 0)
 
-    def break_even(self) -> bool:
+    async def break_even(self, position) -> bool:
 
-        if self.exchange.safe_value(self.position, 'side', None) == 'long':
-            break_even_price = self.exchange.safe_value(self.position, 'entryPrice', 0) * (1 + self.fee)**2
-            return self.best_bid() > break_even_price
+        if self.exchange.safe_value(position, 'side', None) == 'long':
+            break_even_price = self.exchange.safe_value(position, 'entryPrice', 0) * (1 + self.fee)**2
+            return await self.best_bid() > break_even_price
 
-        if self.exchange.safe_value(self.position, 'side', None) == 'short':
-            break_even_price = self.exchange.safe_value(self.position, 'entryPrice', 0) * (1 - self.fee)**2
-            return self.best_ask() < break_even_price
-
-        return False
-
-    def open_orders(self):
-        if self.exchange.orders:
-            return True
+        if self.exchange.safe_value(position, 'side', None) == 'short':
+            break_even_price = self.exchange.safe_value(position, 'entryPrice', 0) * (1 - self.fee)**2
+            return await self.best_ask() < break_even_price
 
         return False
-
-    def initialize_orders(self):
-
-        from ccxtpro.base.cache import ArrayCacheBySymbolById
-
-        limit = self.exchange.safe_integer(self.exchange.options, 'ordersLimit', 1000)
-        if self.exchange.orders is None:
-            self.exchange.orders = ArrayCacheBySymbolById(limit)
 
     @staticmethod
     def transform(df: pd.DataFrame) -> np.ndarray:
@@ -186,19 +174,19 @@ class Botti:
 
         return None
   
-    def position_size(self) -> float:
+    async def used_balance(self):
+        balance = await self.fetch_balance()
+        return balance['used']
+
+    async def position_size(self) -> float:
 
         try:
 
-            spot = getattr(self.exchange, 'balance').get('spot', {})
-            if len(list(spot.keys())) == 0:
-                return 0
-
-            balance = spot[self.parse_currency()]
+            balance = await self.fetch_balance()
             if balance['used'] > 0:
                 return 0
 
-            mid = (self.best_bid() + self.best_ask()) / 2
+            mid = (await self.best_bid() + await self.best_ask()) / 2
 
             contract_size = self.exchange.safe_value(self.exchange.market(self.symbol), 'contractSize')
             contracts = (mid // contract_size) * self.leverage
@@ -210,31 +198,43 @@ class Botti:
  
     async def strategy(self) -> None:
 
+        last_position = None
+
         while True:
 
             await asyncio.sleep(0)
-            if self.symbol not in self.exchange.orderbooks:
-                continue
-
             try:
 
+                open_orders = await self.fetch_open_orders()
+                current_position = await self.fetch_position()
+
+                contracts = self.exchange.safe_value(current_position, 'contracts', 0)
+
+                if contracts > 0:
+                    logging.info('{} {} position - {} {} {} {}'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol), self.exchange.safe_value(current_position, 'side'), self.exchange.safe_value(current_position, 'entryPrice', 0), self.exchange.safe_value(current_position, 'contracts', 0), self.exchange.safe_value(current_position, 'percentage', 0)))
+
+                if contracts == 0 and len(open_orders) == 0:
+                    logging.info('{} {} position - no position'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol)))
+
+                # cancel orders if order has been open longer than 30-minutes
+                if contracts == 0 and len(open_orders) > 0:
+                    timestamps = [o.get('timestamp', 0) for o in open_orders]
+                    timestamps.sort()
+
+                    if ((time.time() * 1000) - timestamps[-1]) > 1800000:
+                        self.cancel_orders()
+
                 # exit 
-                if self.exchange.safe_value(self.position, 'contracts', 0) > 0 and self.break_even():
+                if contracts > 0 and await self.break_even(current_position):
 
-                    print('breaking even')
+                    order_side = 'sell' if self.exchange.safe_value(current_position, 'side') == 'long' else 'buy'
+                    price = self.exchange.safe_value(current_position, 'entryPrice', 0) * (1 + self.fee)**2 if self.exchange.safe_value(current_position, 'side') == 'long' else self.exchange.safe_value(current_position, 'entryPrice', 0) * (1 - self.fee)**2
 
-                    order_side = 'sell' if self.exchange.safe_value(self.position, 'side') == 'long' else 'buy'
-                    price = self.exchange.safe_value(self.position, 'entryPrice', 0) * (1 + self.fee)**2 if self.exchange.safe_value(self.position, 'side') == 'long' else self.exchange.safe_value(self.position, 'entryPrice', 0) * (1 - self.fee)**2
-
-                    args = self.symbol, 'limit', order_side, self.exchange.safe_value(self.position, 'contracts', 0), price, { 'tdMode': 'cross', 'posSide': self.exchange.safe_value(self.position, 'side') }
-                    order = await getattr(self.exchange, 'createOrder')(*args)
-
-                    self.exchange.orders.append(order)
+                    args = self.symbol, 'limit', order_side, contracts, price, { 'tdMode': 'cross', 'posSide': self.exchange.safe_value(current_position, 'side') }
+                    await getattr(self.exchange, 'createOrder')(*args)
                                         
                 # entry
-                if self.exchange.safe_value(self.position, 'contracts', 0) == 0 and not self.open_orders():
-
-                    print('waiting')
+                if contracts == 0 and len(open_orders) == 0 and await self.used_balance() == 0:
 
                     # model is trained on 30-minute intervals, which means a new prediction can only be obtained every 30-minutes.
                     await asyncio.sleep(self.seconds_until_30_minute())
@@ -242,27 +242,20 @@ class Botti:
                     side = self.trailing_entry()
                     if side:
 
-                        size = self.position_size() 
+                        size = await self.position_size() 
                         if size == 0:
                             logger.info('{} {} - trailing entry - position size zero'.format(self.exchange.id, self.symbol))
-                            getattr(self.exchange, 'orders', []).clear()
                             continue
               
                         if side == 'long':
-                            args = self.symbol, 'limit', 'buy', size, self.best_ask(), { 'tdMode': 'cross', 'posSide': side }
-                            order = await getattr(self.exchange, 'createOrder')(*args)
-
-                            self.exchange.orders.append(order)
+                            args = self.symbol, 'limit', 'buy', size, await self.best_ask(), { 'tdMode': 'cross', 'posSide': side }
+                            await getattr(self.exchange, 'createOrder')(*args)
 
                         if side == 'short':
-                            args = self.symbol, 'limit', 'sell', size, self.best_bid(), { 'tdMode': 'cross', 'posSide': side }
-                            order = await getattr(self.exchange, 'createOrder')(*args)
-
-                            self.exchange.orders.append(order)
+                            args = self.symbol, 'limit', 'sell', size, await self.best_bid(), { 'tdMode': 'cross', 'posSide': side }
+                            await getattr(self.exchange, 'createOrder')(*args)
 
             except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-
-                print(e)
                 
                 from ccxt.base.errors import InsufficientFunds, InvalidOrder
 
@@ -292,43 +285,34 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
 
-    async def load_balance(self):
+    async def fetch_balance(self):
 
         try:
             response: dict = await getattr(self.exchange, 'fetchBalance')()
-
-            type = 'spot'
-            self.exchange.balance[type] = response
-
-            logger.info('{} {} - load balance - starting balance {}'.format(self.exchange.id, self.symbol, self.exchange.safe_value(response, self.parse_currency())))
-
+            return response[self.parse_currency()]
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
 
-    async def load_position(self):
+    async def fetch_open_orders(self):
 
         try:
-            self.position: dict = await getattr(self.exchange, 'fetchPosition')(self.symbol)
-
-            if self.position:
-                logger.info('{} {} - load position - {} {} {} {}'.format(self.exchange.id, self.exchange.safe_value(self.position, 'symbol', self.symbol), self.exchange.safe_value(self.position, 'side'), self.exchange.safe_value(self.position, 'entryPrice', 0), self.exchange.safe_value(self.position, 'contracts', 0), self.exchange.safe_value(self.position, 'percentage', 0)))
-            else:
-                logger.info('{} {} - load position - no position'.format(self.exchange.id, self.symbol))
-
+            return await getattr(self.exchange, 'fetchOpenOrders')(self.symbol)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
 
-    async def watch_order_book(self):
+    async def fetch_position(self):
 
-        logger.info(f'{self.exchange.id} {self.symbol} - watching order book')
+        try:
+            return await getattr(self.exchange, 'fetchPosition')(self.symbol)
+        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            log_exception(e, self.exchange.id, self.symbol)
 
-        while True:
-            await asyncio.sleep(0)  
+    async def fetch_l2_order_book(self):
 
-            try: 
-                await getattr(self.exchange, 'watchOrderBook')(self.symbol, limit = 20) 
-            except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-                log_exception(e, self.exchange.id, self.symbol)
+        try:
+            return await getattr(self.exchange, 'fetchL2OrderBook')(self.symbol, limit = 1)
+        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            log_exception(e, self.exchange.id, self.symbol)
 
     def parse_currency(self):
         market = getattr(self.exchange, 'market')(self.symbol)
@@ -338,54 +322,6 @@ class Botti:
             raise Exception('invalid symbol')
 
         return currency
-
-    async def watch_balance(self):
-
-        logger.info(f'{self.exchange.id} {self.symbol} - watching balance')
-
-        while True:
-            await asyncio.sleep(0)  
-
-            try:
-                await getattr(self.exchange, 'watchBalance')()
-            except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-                log_exception(e, self.exchange.id, self.symbol)
-
-    async def watch_trades(self):
-
-        logger.info(f'{self.exchange.id} {self.symbol} - watching trades')
-
-        while True:
-            await asyncio.sleep(0)  
-
-            try:
-                await getattr(self.exchange, 'watchTrades')(self.symbol)
-            except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-                log_exception(e, self.exchange.id, self.symbol)
-
-    async def watch_positions(self):
-
-        logger.info(f'{self.exchange.id} {self.symbol} - watching positions')
-
-        await self.exchange.load_markets()
-        await self.exchange.authenticate()
-
-        while True:
-            await asyncio.sleep(0)  
-
-            try:
-                positions = await getattr(self.exchange, 'subscribe')('private', 'positions', None, { 'instType': 'SWAP' })
-                self.position = self.exchange.safe_value(positions, self.symbol, {})
-
-                if self.exchange.safe_value(self.position, 'contracts', 0) == 0 and self.open_orders():
-                    logging.info('{} {} watch positions - no position'.format(self.exchange.id, self.exchange.safe_value(self.position, 'symbol', self.symbol)))
-                    getattr(self.exchange, 'orders', []).clear()
-    
-                if self.exchange.safe_value(self.position, 'contracts', 0) > 0:
-                    logging.info('{} {} watch positions - {} {} {} {}'.format(self.exchange.id, self.exchange.safe_value(self.position, 'symbol', self.symbol), self.exchange.safe_value(self.position, 'side'), self.exchange.safe_value(self.position, 'entryPrice', 0), self.exchange.safe_value(self.position, 'contracts', 0), self.exchange.safe_value(self.position, 'percentage', 0)))
-                
-            except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-                log_exception(e, self.exchange.id, self.symbol)
 
     async def run(self):
 
@@ -399,20 +335,7 @@ class Botti:
             # set trading fee
             self.set_trading_fee()
 
-            await self.load_balance()
-            await self.load_position()
-
-            self.initialize_orders()
-
-            loops = [
-                self.watch_order_book(),
-                self.watch_positions(),
-                self.watch_balance(),
-                self.watch_trades(),
-                self.strategy()
-            ]
-
-            await asyncio.gather(*loops)
+            await self.strategy()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
