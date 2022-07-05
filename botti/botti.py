@@ -189,8 +189,6 @@ class Botti:
             contract_size = self.exchange.safe_value(self.exchange.market(self.symbol), 'contractSize')
             contracts = (mid // contract_size) * self.leverage
 
-            print(balance['total'] * contracts)
-
             return self.exchange.amount_to_precision(self.symbol, balance['total'] * contracts)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
