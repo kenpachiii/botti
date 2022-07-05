@@ -184,10 +184,12 @@ class Botti:
             if balance['used'] > 0:
                 return 0
 
-            mid = (await self.best_bid() + await self.best_ask()) / 2
+            mid = (await self.best_bid() + await self.best_ask()) // 2
 
             contract_size = self.exchange.safe_value(self.exchange.market(self.symbol), 'contractSize')
             contracts = (mid // contract_size) * self.leverage
+
+            print(balance['total'] * contracts)
 
             return self.exchange.amount_to_precision(self.symbol, balance['total'] * contracts)
 
@@ -196,14 +198,13 @@ class Botti:
  
     async def strategy(self) -> None:
 
-        last_position = None
+        order = {}
 
         while True:
 
             await asyncio.sleep(0)
             try:
 
-                open_orders = await self.fetch_open_orders()
                 current_position = await self.fetch_position()
 
                 contracts = self.exchange.safe_value(current_position, 'contracts', 0)
@@ -211,16 +212,14 @@ class Botti:
                 if contracts > 0:
                     logging.info('{} {} position - {} {} {} {}'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol), self.exchange.safe_value(current_position, 'side'), self.exchange.safe_value(current_position, 'entryPrice', 0), self.exchange.safe_value(current_position, 'contracts', 0), self.exchange.safe_value(current_position, 'percentage', 0)))
 
-                if contracts == 0 and len(open_orders) == 0:
+                if contracts == 0 and order is {}:
                     logging.info('{} {} position - no position'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol)))
 
-                # cancel orders if order has been open longer than 30-minutes
-                if contracts == 0 and len(open_orders) > 0:
-                    timestamps = [o.get('timestamp', 0) for o in open_orders]
-                    timestamps.sort()
-
-                    if ((time.time() * 1000) - timestamps[-1]) > 1800000:
-                        self.cancel_orders()
+                # cancel entry order if order has been open longer than 30-minutes and was never filled
+                if contracts == 0 and order is not {}:
+                    if ((time.time() * 1000) - order.get('timestamp', 0)) > 1800000:
+                        await getattr(self.exchange, 'cancelOrder')(order.get('id'), self.symbol)
+                        order = {}
 
                 # exit 
                 if contracts > 0 and await self.break_even(current_position):
@@ -232,7 +231,7 @@ class Botti:
                     await getattr(self.exchange, 'createOrder')(*args)
                                         
                 # entry
-                if contracts == 0 and len(open_orders) == 0 and await self.used_balance() == 0:
+                if contracts == 0 and order is {} and await self.used_balance() == 0:
 
                     # model is trained on 30-minute intervals, which means a new prediction can only be obtained every 30-minutes.
                     await asyncio.sleep(self.seconds_until_30_minute())
@@ -247,15 +246,17 @@ class Botti:
               
                         if side == 'long':
                             args = self.symbol, 'limit', 'buy', size, await self.best_ask(), { 'tdMode': 'cross', 'posSide': side }
-                            await getattr(self.exchange, 'createOrder')(*args)
+                            order = await getattr(self.exchange, 'createOrder')(*args)
 
                         if side == 'short':
                             args = self.symbol, 'limit', 'sell', size, await self.best_bid(), { 'tdMode': 'cross', 'posSide': side }
-                            await getattr(self.exchange, 'createOrder')(*args)
+                            order = await getattr(self.exchange, 'createOrder')(*args)
 
             except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
                 
                 from ccxt.base.errors import InsufficientFunds, InvalidOrder
+
+                print(e)
 
                 if isinstance(e, InsufficientFunds):
                     continue
@@ -296,13 +297,27 @@ class Botti:
         try:
             return await getattr(self.exchange, 'fetchOpenOrders')(self.symbol)
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+
+            if isinstance(e, ccxtpro.OnMaintenance):
+                return []
+
             log_exception(e, self.exchange.id, self.symbol)
 
+    # TODO: for some reason BTC/USDT will get returned when BTC/USD has no position
     async def fetch_position(self):
 
         try:
-            return await getattr(self.exchange, 'fetchPosition')(self.symbol)
+            position: dict = await getattr(self.exchange, 'fetchPosition')(self.symbol)
+            if position.get('symbol') == self.symbol:
+                return position
+
+            return {}
+
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+
+            if isinstance(e, ccxtpro.OnMaintenance):
+                return {}
+
             log_exception(e, self.exchange.id, self.symbol)
 
     async def fetch_l2_order_book(self):

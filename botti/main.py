@@ -55,7 +55,7 @@ def fetch_history(exchange: Exchange, symbol: str) -> pd.DataFrame:
 
 async def symbol_loop(exchange: Exchange, symbol: str, leverage: int):
 
-    history: dd.DataFrame = fetch_history(exchange, symbol)[:88]
+    history: dd.DataFrame = fetch_history(exchange, symbol)
  
     botti: Botti = Botti(symbol = symbol, leverage = leverage, history = history)
     setattr(botti, 'exchange', exchange)
@@ -76,10 +76,8 @@ async def main():
         args = parser.parse_args()
 
         loop = asyncio.get_event_loop()
-        # loop.set_debug(True)
 
         exchange: Exchange = Exchange({
-            # 'verbose': True,
             'asyncio_loop': loop,
             'newUpdates': True,
             'options': { 'enableRateLimit': True, 'watchOrderBook': { 'depth': 'books' }}
@@ -99,7 +97,7 @@ async def main():
         await exchange.close()
 
     except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-        print(e)
+        
         log_exception(e, exchange.id)
 
         await exchange.close()
