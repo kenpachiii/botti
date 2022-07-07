@@ -200,6 +200,7 @@ class Botti:
             try:
 
                 current_position = await self.fetch_position()
+                order_ids = await self.fetch_open_orders_ids()
 
                 contracts = self.exchange.safe_value(current_position, 'contracts', 0)
 
@@ -209,8 +210,11 @@ class Botti:
                 if contracts == 0 and not order.get('id'):
                     logging.info('{} {} position - no position'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol)))
 
+                    if order.get('id') not in order_ids:
+                        order = {}
+
                 # cancel entry order if order has been open longer than 30-minutes and was never filled
-                if contracts == 0 and order.get('id'):
+                if contracts == 0 and order.get('id') in order_ids:
                     if ((time.time() * 1000) - order.get('timestamp', 0)) > 1800000:
                         await getattr(self.exchange, 'cancelOrder')(order.get('id'), self.symbol)
                         order = {}
@@ -290,6 +294,18 @@ class Botti:
 
         try:
             return await getattr(self.exchange, 'fetchOpenOrders')(self.symbol)
+        except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+
+            if isinstance(e, ccxtpro.OnMaintenance):
+                return []
+
+            log_exception(e, self.exchange.id, self.symbol)
+
+    async def fetch_open_orders_ids(self):
+
+        try:
+            orders = await self.fetch_open_orders()
+            return [order.get('id') for order in orders]
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
 
             if isinstance(e, ccxtpro.OnMaintenance):
