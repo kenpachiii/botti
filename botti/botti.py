@@ -176,20 +176,16 @@ class Botti:
         balance = await self.fetch_balance()
         return balance['used']
 
-    async def position_size(self) -> float:
+    async def position_size(self, side) -> float:
 
         try:
 
-            balance = await self.fetch_balance()
-            if balance['used'] > 0:
-                return 0
-
-            mid = (await self.best_bid() + await self.best_ask()) // 2
-
-            contract_size = self.exchange.safe_value(self.exchange.market(self.symbol), 'contractSize')
-            contracts = (mid // contract_size) * self.leverage
-
-            return self.exchange.amount_to_precision(self.symbol, balance['total'] * contracts)
+            response: dict = await self.exchange.private_get_account_max_size({ 'instId': self.exchange.market_id(self.symbol), 'tdMode': 'cross' })
+            if side == 'long':
+                return response.get('data')[0].get('maxBuy', 0)
+            
+            if side == 'short':
+                return response.get('data')[0].get('maxSell', 0)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
@@ -237,7 +233,7 @@ class Botti:
                     side = self.trailing_entry()
                     if side:
 
-                        size = await self.position_size() * 0.5 # use half for trading and other half for hedging.
+                        size = await self.position_size(side) * 0.5 # use half for trading and other half for hedging.
                         if size == 0:
                             logger.info('{} {} - trailing entry - position size zero'.format(self.exchange.id, self.symbol))
                             continue
