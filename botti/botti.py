@@ -182,10 +182,10 @@ class Botti:
 
             response: dict = await self.exchange.private_get_account_max_size({ 'instId': self.exchange.market_id(self.symbol), 'tdMode': 'cross' })
             if side == 'long':
-                return response.get('data')[0].get('maxBuy', 0)
+                return float(response.get('data')[0].get('maxBuy', 0))
             
             if side == 'short':
-                return response.get('data')[0].get('maxSell', 0)
+                return float(response.get('data')[0].get('maxSell', 0))
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
