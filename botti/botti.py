@@ -210,11 +210,11 @@ class Botti:
                 if contracts > 0:
                     logging.info('{} {} position - {} {} {} {}'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol), self.exchange.safe_value(current_position, 'side'), self.exchange.safe_value(current_position, 'entryPrice', 0), self.exchange.safe_value(current_position, 'contracts', 0), self.exchange.safe_value(current_position, 'percentage', 0)))
 
-                if contracts == 0 and order is {}:
+                if contracts == 0 and not order.get('id'):
                     logging.info('{} {} position - no position'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol)))
 
                 # cancel entry order if order has been open longer than 30-minutes and was never filled
-                if contracts == 0 and order is not {}:
+                if contracts == 0 and order.get('id'):
                     if ((time.time() * 1000) - order.get('timestamp', 0)) > 1800000:
                         await getattr(self.exchange, 'cancelOrder')(order.get('id'), self.symbol)
                         order = {}
@@ -229,7 +229,7 @@ class Botti:
                     await getattr(self.exchange, 'createOrder')(*args)
                                         
                 # entry
-                if contracts == 0 and order is {} and await self.used_balance() == 0:
+                if contracts == 0 and not order.get('id') and await self.used_balance() == 0:
 
                     # model is trained on 30-minute intervals, which means a new prediction can only be obtained every 30-minutes.
                     await asyncio.sleep(self.seconds_until_30_minute())
@@ -306,6 +306,9 @@ class Botti:
 
         try:
             position: dict = await getattr(self.exchange, 'fetchPosition')(self.symbol)
+            if not position:
+                return {}
+
             if position.get('symbol') == self.symbol:
                 return position
 
@@ -315,6 +318,8 @@ class Botti:
 
             if isinstance(e, ccxtpro.OnMaintenance):
                 return {}
+
+            print(e)
 
             log_exception(e, self.exchange.id, self.symbol)
 
