@@ -49,7 +49,7 @@ def fetch_history(exchange: Exchange, symbol: str) -> pd.DataFrame:
     df: pd.DataFrame = pd.DataFrame(trades, columns = ['amount', 'price', 'timestamp'])
     df = df.astype({ 'amount': float, 'price': float, 'timestamp': int })
 
-    logger.info(f'{exchange.id} {symbol} - loaded - {df.shape[0]}')
+    logger.info(f'{exchange.id} {symbol} - loaded - {df.shape[0]} - {exchange.iso8601(int(df.iloc[-1].timestamp))}')
 
     return df
 
