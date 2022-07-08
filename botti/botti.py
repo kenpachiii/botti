@@ -237,7 +237,7 @@ class Botti:
                     side = self.trailing_entry()
                     if side:
 
-                        size = await self.position_size(side) * 0.5 # use half for trading and other half for hedging.
+                        size = await self.position_size(side) * 0.1 # use half for trading and other half for hedging.
                         if size == 0:
                             logger.info('{} {} - trailing entry - position size zero'.format(self.exchange.id, self.symbol))
                             continue
