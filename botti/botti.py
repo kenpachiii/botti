@@ -190,6 +190,7 @@ class Botti:
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
             log_exception(e, self.exchange.id, self.symbol)
  
+    # FIXME: redo order logic
     async def strategy(self) -> None:
 
         order = {}
@@ -200,22 +201,23 @@ class Botti:
             try:
 
                 current_position = await self.fetch_position()
+                open_orders = await self.fetch_open_orders()
 
                 contracts = self.exchange.safe_value(current_position, 'contracts', 0)
 
                 if contracts > 0:
                     logging.info('{} {} position - {} {} {} {}'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol), self.exchange.safe_value(current_position, 'side'), self.exchange.safe_value(current_position, 'entryPrice', 0), self.exchange.safe_value(current_position, 'contracts', 0), self.exchange.safe_value(current_position, 'percentage', 0)))
 
-                if contracts == 0 and not order.get('id'):
+                if contracts == 0 and len(open_orders) == 0:
                     logging.info('{} {} position - no position'.format(self.exchange.id, self.exchange.safe_value(current_position, 'symbol', self.symbol)))
 
-                    order = {}
+                # cancel entry order if order has been open longer than 30-minutes and was never filled
+                if contracts == 0 and len(open_orders) > 0:
 
-                # # cancel entry order if order has been open longer than 30-minutes and was never filled
-                # if contracts == 0 and order.get('id'):
-                #     if ((time.time() * 1000) - order.get('timestamp', 0)) > 1800000:
-                #         await getattr(self.exchange, 'cancelOrder')(order.get('id'), self.symbol)
-                #         order = {}
+                    order: dict = open_orders[-1]
+
+                    if (int(time.time() * 1000) - int(order.get('timestamp', 0))) > 1800000:
+                        await getattr(self.exchange, 'cancelOrder')(order.get('id'), self.symbol)
 
                 # exit 
                 if contracts > 0 and await self.break_even(current_position):
@@ -227,7 +229,7 @@ class Botti:
                     await getattr(self.exchange, 'createOrder')(*args)
                                         
                 # entry
-                if contracts == 0 and not order.get('id') and await self.used_balance() == 0:
+                if contracts == 0 and len(open_orders) == 0 and await self.used_balance() == 0:
 
                     # model is trained on 30-minute intervals, which means a new prediction can only be obtained every 30-minutes.
                     await asyncio.sleep(self.seconds_until_30_minute())
@@ -242,11 +244,11 @@ class Botti:
               
                         if side == 'long':
                             args = self.symbol, 'limit', 'buy', size, await self.best_ask(), { 'tdMode': 'cross', 'posSide': side }
-                            order = await getattr(self.exchange, 'createOrder')(*args)
+                            await getattr(self.exchange, 'createOrder')(*args)
 
                         if side == 'short':
                             args = self.symbol, 'limit', 'sell', size, await self.best_bid(), { 'tdMode': 'cross', 'posSide': side }
-                            order = await getattr(self.exchange, 'createOrder')(*args)
+                            await getattr(self.exchange, 'createOrder')(*args)
 
             except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
                 
