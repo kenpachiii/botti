@@ -127,6 +127,7 @@ class Botti:
             return self.transform(self.history.copy())[-size:]
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            print(e)
             log_exception(e, self.exchange.id, self.symbol)
 
     def predict(self):
@@ -237,7 +238,7 @@ class Botti:
                     side = self.trailing_entry()
                     if side:
 
-                        size = await self.position_size(side) * 0.1 # use half for trading and other half for hedging.
+                        size = await self.position_size(side) * 0.25 # use half for trading and other half for hedging.
                         if size == 0:
                             logger.info('{} {} - trailing entry - position size zero'.format(self.exchange.id, self.symbol))
                             continue
