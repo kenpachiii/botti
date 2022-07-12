@@ -122,6 +122,7 @@ class Botti:
             trades = json.loads(requests.get(url).text)
 
             self.history: pd.DataFrame = pd.concat([self.history, pd.DataFrame(trades, columns = ['amount', 'price', 'timestamp'])], ignore_index = True)
+            self.history: pd.DataFrame = self.history.astype({ 'amount': float, 'price': float, 'timestamp': int })
             self.history.reset_index(inplace = True, drop = True)
 
             return self.transform(self.history.copy())[-size:]
